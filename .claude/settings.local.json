@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/Users/giuseppecerbero/.nvm/versions/node/v22.22.2/bin/node /Users/giuseppecerbero/.nvm/versions/node/v22.22.2/bin/npx tsc --noEmit)",
+      "Bash(export PATH=\"/Users/giuseppecerbero/.nvm/versions/node/v22.22.2/bin:$PATH\")",
+      "Bash(npx tsc *)",
+      "Bash(npm test *)",
+      "Bash(npm list *)",
+      "Bash(npm install *)",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(export PATH=\"$HOME/.nvm/versions/node/v22.22.2/bin:$PATH\")",
+      "Bash(npx jest *)"
+    ]
+  }
+}
