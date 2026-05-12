@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import AppNav from '../components/AppNav';
+import DateInput from '../components/DateInput';
 import { fetchOngoing, fetchOngoingHistory, saveOngoing, syncKeyedin } from '../api/ongoing';
 import type { OngoingData, OngoingSnapshot } from '../types';
 
@@ -222,10 +223,9 @@ export default function Ongoing() {
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
                 <label className="block text-xs text-text-muted mb-1">Data di riferimento *</label>
-                <input
-                  type="date"
+                <DateInput
                   value={form.reporting_date}
-                  onChange={(e) => setForm((f) => ({ ...f, reporting_date: e.target.value }))}
+                  onChange={(val) => setForm((f) => ({ ...f, reporting_date: val }))}
                   className="w-full bg-base border border-border text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
                 />
               </div>

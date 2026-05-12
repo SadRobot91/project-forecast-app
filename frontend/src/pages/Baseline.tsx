@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import AppNav from '../components/AppNav';
 import ConfirmModal from '../components/ConfirmModal';
+import DateInput from '../components/DateInput';
 import { fetchBaseline, saveBaseline, lockBaseline } from '../api/baseline';
 import { networkDays } from '../utils/networkDays';
 import type { BaselineData, PhaseType } from '../types';
@@ -221,20 +222,18 @@ export default function Baseline() {
                   <tr key={row.phase_id} className="border-b border-border/50 hover:bg-surface-2/40 transition-colors">
                     <td className="px-4 py-3 font-semibold text-text-primary">{PHASE_LABEL[row.phase_type]}</td>
                     <td className="px-4 py-3">
-                      <input
-                        type="date"
+                      <DateInput
                         value={row.planned_start}
                         disabled={isLocked}
-                        onChange={(e) => updatePhase(idx, 'planned_start', e.target.value)}
+                        onChange={(val) => updatePhase(idx, 'planned_start', val)}
                         className={`rounded-lg px-2 py-1 text-sm w-36 ${inputCls}`}
                       />
                     </td>
                     <td className="px-4 py-3">
-                      <input
-                        type="date"
+                      <DateInput
                         value={row.planned_end}
                         disabled={isLocked}
-                        onChange={(e) => updatePhase(idx, 'planned_end', e.target.value)}
+                        onChange={(val) => updatePhase(idx, 'planned_end', val)}
                         className={`rounded-lg px-2 py-1 text-sm w-36 ${inputCls}`}
                       />
                     </td>
