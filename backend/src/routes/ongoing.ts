@@ -12,7 +12,7 @@ router.get('/', async (req, res) => {
   const { id: projectId } = req.params as { id: string };
   try {
     const snapshot = await manualProvider.getLatestSnapshot(projectId);
-    if (!snapshot) return res.status(404).json({ message: 'No ongoing snapshot found' });
+    if (!snapshot) return res.status(404).json({ error: 'No ongoing snapshot found' });
     res.json(snapshot);
   } catch (err) {
     console.error(err);
@@ -36,7 +36,17 @@ router.get('/history', async (req, res) => {
 router.post('/', async (req, res) => {
   const { id: projectId } = req.params as { id: string };
   const { reporting_date, hours_spent_to_date, cost_spent_to_date, working_days_used, working_days_remaining } = req.body;
-  
+
+  if (!reporting_date || typeof reporting_date !== 'string') {
+    return res.status(400).json({ error: 'reporting_date is required (YYYY-MM-DD)' });
+  }
+  if (cost_spent_to_date === undefined || cost_spent_to_date === null || isNaN(parseFloat(cost_spent_to_date))) {
+    return res.status(400).json({ error: 'cost_spent_to_date is required and must be a number' });
+  }
+  if (hours_spent_to_date === undefined || hours_spent_to_date === null || isNaN(parseFloat(hours_spent_to_date))) {
+    return res.status(400).json({ error: 'hours_spent_to_date is required and must be a number' });
+  }
+
   try {
     const data: SnapshotData = {
       project_id: parseInt(projectId, 10),

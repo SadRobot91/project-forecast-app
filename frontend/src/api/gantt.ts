@@ -27,6 +27,10 @@ export interface TaskPayload {
 export async function updateTask(projectId: string, taskId: number, data: TaskPayload): Promise<void> {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 300));
+    for (const phase of MOCK_GANTT.phases) {
+      const task = phase.tasks.find((t) => t.id === taskId);
+      if (task) { Object.assign(task, data); break; }
+    }
     return;
   }
   await apiClient(`/api/projects/${projectId}/gantt/tasks/${taskId}`, {
@@ -41,7 +45,7 @@ export async function createTask(
 ): Promise<GanttTask> {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 300));
-    return {
+    const newTask: GanttTask = {
       id: Math.floor(Math.random() * 1000) + 100,
       project_id: parseInt(projectId, 10),
       phase_id: data.phase_id,
@@ -55,6 +59,9 @@ export async function createTask(
       actual_date: data.actual_date ?? null,
       status: data.status ?? 'not_started',
     };
+    const phase = MOCK_GANTT.phases.find((p) => p.phase_id === data.phase_id);
+    if (phase) phase.tasks.push(newTask);
+    return newTask;
   }
   return apiClient<GanttTask>(`/api/projects/${projectId}/gantt/tasks`, {
     method: 'POST',
@@ -65,6 +72,10 @@ export async function createTask(
 export async function deleteTask(projectId: string, taskId: number): Promise<void> {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 200));
+    for (const phase of MOCK_GANTT.phases) {
+      const idx = phase.tasks.findIndex((t) => t.id === taskId);
+      if (idx !== -1) { phase.tasks.splice(idx, 1); break; }
+    }
     return;
   }
   await apiClient(`/api/projects/${projectId}/gantt/tasks/${taskId}`, { method: 'DELETE' });

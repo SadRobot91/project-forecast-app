@@ -11,6 +11,8 @@ jest.mock('../db', () => ({ query: (...args: any[]) => mockQuery(...args) }));
 jest.mock('../services/computations', () => ({
   calculateNetworkDays: jest.fn(() => 5),
   validateFTE: jest.fn(() => ({ isValid: true, warnings: [] })),
+  calculateRevisedForecast: jest.fn(() => 64600),
+  calculateRAGStatus: jest.fn(() => 'IN_LINEA'),
 }));
 
 import express from 'express';
@@ -45,7 +47,8 @@ describe('GET /api/projects', () => {
   it('returns project list', async () => {
     mockQuery.mockResolvedValueOnce(dbOk([
       { id: 1, name: 'RXI Platform', status: 'active', currency: 'GBP',
-        current_phase: 'build', budget_spent: '36200', budget_total: '64600' },
+        current_phase: 'build', budget_spent: '36200', budget_total: '64600',
+        working_days_total: '120' },
     ]));
 
     const res = await request(app).get('/api/projects');
@@ -256,7 +259,10 @@ describe('POST /api/projects/:id/gantt/tasks', () => {
   });
 
   it('creates a task and returns 201', async () => {
-    mockQuery.mockResolvedValueOnce(dbOk([{ phase_type: 'build' }])); // phase lookup
+    mockQuery.mockResolvedValueOnce(dbOk([{                           // phase lookup (with bounds)
+      phase_type: 'build',
+      planned_start: new Date('2026-03-01'), planned_end: new Date('2026-03-31'),
+    }]));
     mockQuery.mockResolvedValueOnce(dbOk([{                           // INSERT RETURNING
       id: 99, project_id: 1, phase_id: 1, name: 'New Task', owner: null,
       start_date: new Date('2026-03-02'), end_date: new Date('2026-03-06'),
@@ -278,6 +284,43 @@ describe('POST /api/projects/:id/gantt/tasks', () => {
       .post('/api/projects/1/gantt/tasks')
       .send({ phase_id: 999, name: 'X', start_date: '2026-03-02', end_date: '2026-03-06' });
     expect(res.status).toBe(404);
+  });
+
+  // BUG-15: date validation paths for POST
+  it('rejects end_date before start_date', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{
+      phase_type: 'build',
+      planned_start: new Date('2026-03-01'), planned_end: new Date('2026-03-31'),
+    }]));
+    const res = await request(app)
+      .post('/api/projects/1/gantt/tasks')
+      .send({ phase_id: 1, name: 'Bad', start_date: '2026-03-10', end_date: '2026-03-05' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/end_date.*must be.*start_date/);
+  });
+
+  it('rejects start_date before phase start', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{
+      phase_type: 'build',
+      planned_start: new Date('2026-03-01'), planned_end: new Date('2026-03-31'),
+    }]));
+    const res = await request(app)
+      .post('/api/projects/1/gantt/tasks')
+      .send({ phase_id: 1, name: 'Bad', start_date: '2026-02-20', end_date: '2026-03-05' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/precede/);
+  });
+
+  it('rejects end_date after phase end', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{
+      phase_type: 'build',
+      planned_start: new Date('2026-03-01'), planned_end: new Date('2026-03-31'),
+    }]));
+    const res = await request(app)
+      .post('/api/projects/1/gantt/tasks')
+      .send({ phase_id: 1, name: 'Bad', start_date: '2026-03-20', end_date: '2026-04-05' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/supera/);
   });
 });
 
@@ -312,6 +355,55 @@ describe('PUT /api/projects/:id/gantt/tasks/:tid', () => {
     mockQuery.mockResolvedValueOnce(dbOk([], 0));
     const res = await request(app).put('/api/projects/1/gantt/tasks/999').send({ name: 'X' });
     expect(res.status).toBe(404);
+  });
+
+  // BUG-14: date validation paths for PUT
+  it('rejects end_date before start_date', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{
+      start_date: new Date('2026-03-02'), end_date: new Date('2026-03-06'),
+      is_milestone: false, planned_start: new Date('2026-03-01'), planned_end: new Date('2026-03-31'),
+    }]));
+    const res = await request(app)
+      .put('/api/projects/1/gantt/tasks/7')
+      .send({ start_date: '2026-03-10', end_date: '2026-03-05' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/end_date.*must be.*start_date/);
+  });
+
+  it('rejects start_date before phase start', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{
+      start_date: new Date('2026-03-05'), end_date: new Date('2026-03-10'),
+      is_milestone: false, planned_start: new Date('2026-03-03'), planned_end: new Date('2026-03-31'),
+    }]));
+    const res = await request(app)
+      .put('/api/projects/1/gantt/tasks/7')
+      .send({ start_date: '2026-03-01' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/precede/);
+  });
+
+  it('rejects end_date after phase end', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{
+      start_date: new Date('2026-03-05'), end_date: new Date('2026-03-10'),
+      is_milestone: false, planned_start: new Date('2026-03-01'), planned_end: new Date('2026-03-20'),
+    }]));
+    const res = await request(app)
+      .put('/api/projects/1/gantt/tasks/7')
+      .send({ end_date: '2026-03-25' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/supera/);
+  });
+
+  it('accepts valid date update within phase bounds', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{
+      start_date: new Date('2026-03-05'), end_date: new Date('2026-03-10'),
+      is_milestone: false, planned_start: new Date('2026-03-01'), planned_end: new Date('2026-03-31'),
+    }]));
+    mockQuery.mockResolvedValueOnce(dbOk([{ id: 7 }]));
+    const res = await request(app)
+      .put('/api/projects/1/gantt/tasks/7')
+      .send({ start_date: '2026-03-08', end_date: '2026-03-15' });
+    expect(res.status).toBe(200);
   });
 });
 

@@ -21,6 +21,7 @@ export default function AppNav({ projectId, projectName }: Props) {
     { label: 'Baseline',   to: `/projects/${projectId}/baseline` },
     { label: 'Allocation', to: `/projects/${projectId}/allocation` },
     { label: 'Gantt',      to: `/projects/${projectId}/gantt` },
+    { label: 'Ongoing',    to: `/projects/${projectId}/ongoing` },
   ] : [];
 
   const globalLinks: NavItem[] = [

@@ -1,4 +1,4 @@
-import { calculateNetworkDays, calculatePhaseBudget, validateFTE, calculateRevisedForecast, calculateRAGStatus, RAGStatus } from './computations';
+import { calculateNetworkDays, validateFTE, calculateRevisedForecast, calculateRAGStatus, RAGStatus } from './computations';
 
 describe('Computations Logic', () => {
 
@@ -30,21 +30,6 @@ describe('Computations Logic', () => {
       const start = new Date('2026-05-10');
       const end = new Date('2026-05-01');
       expect(calculateNetworkDays(start, end)).toBe(0);
-    });
-  });
-
-  describe('calculatePhaseBudget', () => {
-    it('should sum monthly costs correctly', () => {
-      const allocations = [
-        { monthlyCost: 1000 },
-        { monthlyCost: 500.5 },
-        { monthlyCost: 200 }
-      ];
-      expect(calculatePhaseBudget(allocations)).toBe(1700.5);
-    });
-
-    it('should return 0 for empty allocations', () => {
-      expect(calculatePhaseBudget([])).toBe(0);
     });
   });
 

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { query } from '../db';
+import { calculateRevisedForecast, calculateRAGStatus } from '../services/computations';
 
 const router = Router();
 
@@ -25,7 +26,12 @@ router.get('/', async (req, res) => {
                 SELECT MAX(pp2.planned_end)
                 FROM "ProjectPhase" pp2
                 WHERE pp2.project_id = p.id
-              ) as project_end
+              ) as project_end,
+              COALESCE((
+                SELECT SUM(pp3.working_days)
+                FROM "ProjectPhase" pp3
+                WHERE pp3.project_id = p.id
+              ), 0)::integer as working_days_total
        FROM "Project" p
        LEFT JOIN "ProjectPhase" ph ON ph.project_id = p.id AND ph.status = 'in_progress'
        GROUP BY p.id, p.name, p.status, p.currency, ph.phase_type
@@ -54,11 +60,16 @@ router.get('/', async (req, res) => {
         }
       }
 
+      const wdTotal = parseInt(r.working_days_total, 10) || 0;
+      const dailyBurnRate = wdTotal > 0 ? total / wdTotal : 0;
+      const revisedForecast = calculateRevisedForecast(0, spent, dailyBurnRate, daysRemaining, 0, 0);
+      const ragStatus = calculateRAGStatus(revisedForecast, total);
+
       return {
         id: r.id,
         name: r.name,
         status: r.status,
-        rag_status: 'IN_LINEA',
+        rag_status: ragStatus,
         current_phase: r.current_phase ?? null,
         budget_total: total,
         budget_spent: spent,

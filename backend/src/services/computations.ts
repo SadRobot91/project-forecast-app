@@ -27,9 +27,6 @@ export function calculateNetworkDays(startDate: Date, endDate: Date, publicHolid
   return count;
 }
 
-export function calculatePhaseBudget(allocations: { monthlyCost: number }[]): number {
-  return allocations.reduce((sum, alloc) => sum + alloc.monthlyCost, 0);
-}
 
 export interface FTEAllocation {
   projectId: number;
