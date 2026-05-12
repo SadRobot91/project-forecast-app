@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { ManualFallbackProvider } from '../services/ongoing/ManualFallbackProvider';
 import { KeyedinApiProvider } from '../services/ongoing/KeyedinApiProvider';
 import { SnapshotData } from '../services/ongoing/OngoingDataProvider';
+import { query } from '../db';
 
 const router = Router({ mergeParams: true });
 const manualProvider = new ManualFallbackProvider();
@@ -11,9 +12,23 @@ const keyedinProvider = new KeyedinApiProvider();
 router.get('/', async (req, res) => {
   const { id: projectId } = req.params as { id: string };
   try {
+    const projRes = await query(
+      `SELECT p.name,
+              COALESCE((SELECT SUM(ae.weekly_cost) FROM "AllocationEntry" ae WHERE ae.project_id = p.id), 0)::numeric as budget_total,
+              COALESCE((SELECT SUM(pp.working_days) FROM "ProjectPhase" pp WHERE pp.project_id = p.id), 0)::integer as total_working_days
+       FROM "Project" p WHERE p.id = $1`,
+      [projectId]
+    );
+    if (!projRes.rowCount) return res.status(404).json({ error: 'Project not found' });
+
     const snapshot = await manualProvider.getLatestSnapshot(projectId);
-    if (!snapshot) return res.status(404).json({ error: 'No ongoing snapshot found' });
-    res.json(snapshot);
+
+    res.json({
+      project_name:        projRes.rows[0].name,
+      budget_total:        parseFloat(projRes.rows[0].budget_total),
+      total_working_days:  parseInt(projRes.rows[0].total_working_days, 10),
+      snapshot:            snapshot ?? null,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });

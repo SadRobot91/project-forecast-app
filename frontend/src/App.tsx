@@ -8,6 +8,7 @@ import Baseline from './pages/Baseline';
 import Allocation from './pages/Allocation';
 import Resources from './pages/Resources';
 import Gantt from './pages/Gantt';
+import Ongoing from './pages/Ongoing';
 
 export default function App() {
   return (
@@ -52,6 +53,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Gantt />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/projects/:id/ongoing"
+            element={
+              <ProtectedRoute>
+                <Ongoing />
               </ProtectedRoute>
             }
           />
