@@ -41,6 +41,21 @@ export async function saveOngoing(projectId: string, payload: OngoingPayload): P
   });
 }
 
+export async function deleteSnapshot(projectId: string, snapshotId: number): Promise<void> {
+  if (USE_MOCK) {
+    await new Promise((r) => setTimeout(r, 300));
+    const idx = MOCK_ONGOING_HISTORY.findIndex((s) => s.id === snapshotId);
+    if (idx !== -1) MOCK_ONGOING_HISTORY.splice(idx, 1);
+    if (MOCK_ONGOING.snapshot?.id === snapshotId) {
+      MOCK_ONGOING.snapshot = MOCK_ONGOING_HISTORY[0] ?? null;
+    }
+    return;
+  }
+  await apiClient<void>(`/api/projects/${projectId}/ongoing/${snapshotId}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function syncKeyedin(projectId: string): Promise<OngoingSnapshot> {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 800));

@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import AppNav from '../components/AppNav';
 import DateInput from '../components/DateInput';
-import { fetchOngoing, fetchOngoingHistory, saveOngoing, syncKeyedin } from '../api/ongoing';
+import ConfirmModal from '../components/ConfirmModal';
+import { fetchOngoing, fetchOngoingHistory, saveOngoing, deleteSnapshot, syncKeyedin } from '../api/ongoing';
 import type { OngoingData, OngoingSnapshot } from '../types';
 
 function fmt(n: number) {
@@ -21,6 +22,8 @@ function fmtDateTime(iso: string) {
 
 const today = new Date().toISOString().slice(0, 10);
 
+const HOURS_PER_DAY = 8;
+
 const EMPTY_FORM = {
   reporting_date:        today,
   cost_spent_to_date:    '',
@@ -29,16 +32,36 @@ const EMPTY_FORM = {
   working_days_remaining: '',
 };
 
+const DELETE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function withinDeletionWindow(snapshot: OngoingSnapshot): boolean {
+  return Date.now() - new Date(snapshot.created_at).getTime() < DELETE_WINDOW_MS;
+}
+
+function deriveWorkingDays(
+  hoursStr: string,
+  totalWD: number,
+): { working_days_used: string; working_days_remaining: string } {
+  const hours = parseFloat(hoursStr);
+  if (isNaN(hours) || hours < 0) return { working_days_used: '', working_days_remaining: '' };
+  const used = Math.round(hours / HOURS_PER_DAY);
+  const remaining = Math.max(0, totalWD - used);
+  return { working_days_used: String(used), working_days_remaining: String(remaining) };
+}
+
 export default function Ongoing() {
   const { id: projectId } = useParams<{ id: string }>();
   const [data, setData]       = useState<OngoingData | null>(null);
   const [history, setHistory] = useState<OngoingSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm]       = useState(EMPTY_FORM);
-  const [saving, setSaving]   = useState(false);
-  const [saved, setSaved]     = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [error, setError]     = useState<string | null>(null);
+  const [saving, setSaving]         = useState(false);
+  const [saved, setSaved]           = useState(false);
+  const [syncing, setSyncing]       = useState(false);
+  const [error, setError]           = useState<string | null>(null);
+  const [showSaveConfirm, setShowSaveConfirm] = useState(false);
+  const [deleteTarget, setDeleteTarget]       = useState<OngoingSnapshot | null>(null);
+  const [deleting, setDeleting]               = useState(false);
 
   const load = useCallback(() => {
     if (!projectId) return;
@@ -62,26 +85,36 @@ export default function Ongoing() {
 
   useEffect(() => { load(); }, [load]);
 
-  async function handleSave() {
+  function handleSaveClick() {
     if (!projectId) return;
     const cost  = parseFloat(form.cost_spent_to_date);
     const hours = parseFloat(form.hours_spent_to_date);
     const wdUsed = parseFloat(form.working_days_used);
-    const wdRem  = parseFloat(form.working_days_remaining);
 
     if (!form.reporting_date) { setError('Data di riferimento obbligatoria.'); return; }
     if (isNaN(cost)  || cost  < 0) { setError('Costo speso non valido.'); return; }
     if (isNaN(hours) || hours < 0) { setError('Ore spese non valide.'); return; }
     if (isNaN(wdUsed) || wdUsed < 0) { setError('Giorni lavorativi usati non validi.'); return; }
 
-    setSaving(true);
     setError(null);
+    setShowSaveConfirm(true);
+  }
+
+  async function handleSaveConfirmed() {
+    if (!projectId) return;
+    const cost   = parseFloat(form.cost_spent_to_date);
+    const hours  = parseFloat(form.hours_spent_to_date);
+    const wdUsed = parseFloat(form.working_days_used);
+    const wdRem  = parseFloat(form.working_days_remaining);
+
+    setShowSaveConfirm(false);
+    setSaving(true);
     try {
       await saveOngoing(projectId, {
-        reporting_date:        form.reporting_date,
-        cost_spent_to_date:    cost,
-        hours_spent_to_date:   hours,
-        working_days_used:     wdUsed,
+        reporting_date:         form.reporting_date,
+        cost_spent_to_date:     cost,
+        hours_spent_to_date:    hours,
+        working_days_used:      wdUsed,
         working_days_remaining: isNaN(wdRem) ? 0 : wdRem,
       });
       load();
@@ -91,6 +124,21 @@ export default function Ongoing() {
       setError('Errore durante il salvataggio. Riprova.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDeleteConfirmed() {
+    if (!projectId || !deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteSnapshot(projectId, deleteTarget.id);
+      setDeleteTarget(null);
+      load();
+    } catch (e: any) {
+      setDeleteTarget(null);
+      setError(e?.message ?? 'Errore durante la cancellazione.');
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -135,6 +183,29 @@ export default function Ongoing() {
   return (
     <div className="min-h-screen bg-base text-text-primary">
       <AppNav projectId={projectId} projectName={data?.project_name} />
+
+      {showSaveConfirm && (
+        <ConfirmModal
+          title="Salva Snapshot"
+          message={`Stai per salvare uno snapshot alla data ${fmtDate(form.reporting_date)} con ${form.hours_spent_to_date}h e £${form.cost_spent_to_date} di costo. Confermi?`}
+          confirmLabel="Salva"
+          loading={saving}
+          onConfirm={handleSaveConfirmed}
+          onCancel={() => setShowSaveConfirm(false)}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmModal
+          title="Elimina Snapshot"
+          message={`Stai per eliminare lo snapshot del ${fmtDate(deleteTarget.reporting_date)}. Questa azione è irreversibile. Continuare?`}
+          confirmLabel="Elimina"
+          confirmDanger
+          loading={deleting}
+          onConfirm={handleDeleteConfirmed}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
 
       <main className="max-w-7xl mx-auto px-6 py-8 space-y-6">
 
@@ -247,36 +318,51 @@ export default function Ongoing() {
                   min={0}
                   placeholder="es. 320"
                   value={form.hours_spent_to_date}
-                  onChange={(e) => setForm((f) => ({ ...f, hours_spent_to_date: e.target.value }))}
+                  onChange={(e) => {
+                    const hours = e.target.value;
+                    const derived = deriveWorkingDays(hours, totalWD);
+                    setForm((f) => ({ ...f, hours_spent_to_date: hours, ...derived }));
+                  }}
                   className="w-full bg-base border border-border text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
                 />
               </div>
               <div>
-                <label className="block text-xs text-text-muted mb-1">GG lavorativi usati</label>
+                <label className="block text-xs text-text-muted mb-1">
+                  GG lavorativi usati
+                  <span className="ml-1 text-accent/60 text-[10px] normal-case">auto</span>
+                </label>
                 <input
                   type="number"
                   min={0}
                   placeholder="es. 58"
                   value={form.working_days_used}
-                  onChange={(e) => setForm((f) => ({ ...f, working_days_used: e.target.value }))}
-                  className="w-full bg-base border border-border text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
+                  onChange={(e) => {
+                    const used = e.target.value;
+                    const usedNum = parseFloat(used);
+                    const remaining = isNaN(usedNum) ? '' : String(Math.max(0, totalWD - usedNum));
+                    setForm((f) => ({ ...f, working_days_used: used, working_days_remaining: remaining }));
+                  }}
+                  className="w-full bg-base border border-accent/20 text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
                 />
               </div>
               <div>
-                <label className="block text-xs text-text-muted mb-1">GG lavorativi rimanenti</label>
+                <label className="block text-xs text-text-muted mb-1">
+                  GG lavorativi rimanenti
+                  <span className="ml-1 text-accent/60 text-[10px] normal-case">auto</span>
+                </label>
                 <input
                   type="number"
                   min={0}
                   placeholder="es. 83"
                   value={form.working_days_remaining}
                   onChange={(e) => setForm((f) => ({ ...f, working_days_remaining: e.target.value }))}
-                  className="w-full bg-base border border-border text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
+                  className="w-full bg-base border border-accent/20 text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
                 />
               </div>
             </div>
 
             <button
-              onClick={handleSave}
+              onClick={handleSaveClick}
               disabled={saving}
               className="w-full px-4 py-2 rounded-lg text-sm font-semibold bg-accent hover:bg-accent/90 disabled:opacity-50 text-white transition-all"
             >
@@ -299,15 +385,28 @@ export default function Ongoing() {
                         {fmt(s.cost_spent_to_date)} · {s.hours_spent_to_date}h · {s.working_days_used} GG usati
                       </p>
                     </div>
-                    <div className="text-right flex-shrink-0 ml-3">
-                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                        s.source === 'keyedin_api'
-                          ? 'bg-accent/15 text-accent'
-                          : 'bg-surface-2 text-text-muted'
-                      }`}>
-                        {s.source === 'keyedin_api' ? 'Keyedin' : 'Manuale'}
-                      </span>
-                      <p className="text-xs text-text-dim mt-1">{fmtDateTime(s.created_at)}</p>
+                    <div className="text-right flex-shrink-0 ml-3 flex items-start gap-2">
+                      <div>
+                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                          s.source === 'keyedin_api'
+                            ? 'bg-accent/15 text-accent'
+                            : 'bg-surface-2 text-text-muted'
+                        }`}>
+                          {s.source === 'keyedin_api' ? 'Keyedin' : 'Manuale'}
+                        </span>
+                        <p className="text-xs text-text-dim mt-1">{fmtDateTime(s.created_at)}</p>
+                      </div>
+                      {withinDeletionWindow(s) && (
+                        <button
+                          onClick={() => setDeleteTarget(s)}
+                          title="Elimina snapshot (disponibile entro 24h)"
+                          className="mt-0.5 text-text-dim hover:text-rag-red transition-colors"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

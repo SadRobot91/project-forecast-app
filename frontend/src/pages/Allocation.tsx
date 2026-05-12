@@ -129,12 +129,18 @@ function PhaseBlock({ phase, projectId, allResources, crossTotals, onSaved }: Ph
   }
 
   function updateCell(resourceId: number, weekStart: string, fte: number) {
+    const dayRate = resources.find((r) => r.id === resourceId)?.day_rate ?? 0;
     setCells((prev) => {
       const existing = prev.find((c) => c.resource_id === resourceId && c.week_start === weekStart);
       if (existing) {
-        return prev.map((c) => c.resource_id === resourceId && c.week_start === weekStart ? { ...c, fte } : c);
+        const weekly_cost = dayRate * fte * existing.working_days;
+        return prev.map((c) =>
+          c.resource_id === resourceId && c.week_start === weekStart ? { ...c, fte, weekly_cost } : c
+        );
       }
-      return [...prev, { resource_id: resourceId, phase_id: phase.phase_id, week_start: weekStart, fte, working_days: 5, weekly_cost: 0 }];
+      // New cell: assume 5 working days — server will recalculate the exact value on save
+      const weekly_cost = dayRate * fte * 5;
+      return [...prev, { resource_id: resourceId, phase_id: phase.phase_id, week_start: weekStart, fte, working_days: 5, weekly_cost }];
     });
   }
 

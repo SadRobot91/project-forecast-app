@@ -80,6 +80,31 @@ router.post('/', async (req, res) => {
   }
 });
 
+// DELETE /api/projects/:id/ongoing/:snapshotId
+// Only allowed within 24 hours of creation (deletion window)
+router.delete('/:snapshotId', async (req, res) => {
+  const { id: projectId, snapshotId } = req.params as { id: string; snapshotId: string };
+  try {
+    const existing = await query(
+      'SELECT id, created_at FROM "OngoingSnapshot" WHERE id = $1 AND project_id = $2',
+      [snapshotId, projectId],
+    );
+    if (!existing.rowCount) return res.status(404).json({ error: 'Snapshot not found' });
+
+    const createdAt = new Date(existing.rows[0].created_at);
+    const windowMs = 24 * 60 * 60 * 1000;
+    if (Date.now() - createdAt.getTime() > windowMs) {
+      return res.status(403).json({ error: 'Deletion window expired (24h). Snapshot is now locked.' });
+    }
+
+    await query('DELETE FROM "OngoingSnapshot" WHERE id = $1', [snapshotId]);
+    res.status(204).end();
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // POST /api/projects/:id/ongoing/sync
 router.post('/sync', async (req, res) => {
   const { id: projectId } = req.params as { id: string };
