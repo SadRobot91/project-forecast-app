@@ -33,7 +33,7 @@ router.get('/', async (req, res) => {
     if (!projRes.rowCount) return res.status(404).json({ error: 'Project not found' });
 
     const phasesRes = await query(
-      `SELECT id as phase_id, phase_type, planned_start, planned_end, status
+      `SELECT id as phase_id, phase_type, display_name, planned_start, planned_end, status
        FROM "ProjectPhase" WHERE project_id = $1 ORDER BY "order"`,
       [projectId]
     );
@@ -65,6 +65,7 @@ router.get('/', async (req, res) => {
       return {
         phase_id:      ph.phase_id,
         phase_type:    ph.phase_type,
+        display_name:  ph.display_name,
         planned_start: isoDate(ph.planned_start),
         planned_end:   isoDate(ph.planned_end),
         status:        ph.status ?? 'not_started',

@@ -5,16 +5,7 @@ import ConfirmModal from '../components/ConfirmModal';
 import DateInput from '../components/DateInput';
 import { fetchBaseline, saveBaseline, lockBaseline } from '../api/baseline';
 import { networkDays } from '../utils/networkDays';
-import type { BaselineData, PhaseType } from '../types';
-
-const PHASE_LABEL: Record<PhaseType, string> = {
-  feasibility:     'Feasibility',
-  planning_design: 'Planning & Design',
-  build:           'Build',
-  deployment:      'Deployment',
-  closure:         'Closure',
-};
-
+import type { BaselineData } from '../types';
 
 function fmt(n: number) {
   return `£${n.toLocaleString('en-GB', { maximumFractionDigits: 0 })}`;
@@ -22,28 +13,30 @@ function fmt(n: number) {
 
 interface PhaseState {
   phase_id: number;
-  phase_type: PhaseType;
+  phase_type: string;
+  display_name: string;
   order: number;
   planned_start: string;
   planned_end: string;
-  budget: number; // from AllocationEntry, read-only
+  budget: number;
   contingency_pct: number;
   status: string;
 }
 
 export default function Baseline() {
   const { id: projectId } = useParams<{ id: string }>();
-  const [data, setData] = useState<BaselineData | null>(null);
-  const [phases, setPhases] = useState<PhaseState[]>([]);
-  const [isLocked, setIsLocked] = useState(false);
-  const [lockedAt, setLockedAt] = useState<string | null>(null);
-  const [contingencyPct, setContingencyPct] = useState(0);
+  const [data, setData]           = useState<BaselineData | null>(null);
+  const [phases, setPhases]       = useState<PhaseState[]>([]);
+  const [isLocked, setIsLocked]   = useState(false);
+  const [lockedAt, setLockedAt]   = useState<string | null>(null);
   const [showLockModal, setShowLockModal] = useState(false);
-  const [lockLoading, setLockLoading] = useState(false);
-  const [saveLoading, setSaveLoading] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saved, setSaved] = useState(false);
+  const [lockLoading, setLockLoading]     = useState(false);
+  const [saveLoading, setSaveLoading]     = useState(false);
+  const [saveError, setSaveError]         = useState<string | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [saved, setSaved]         = useState(false);
+  // inline rename state: phase_id → editing name value
+  const [editingName, setEditingName] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (!projectId) return;
@@ -51,17 +44,17 @@ export default function Baseline() {
       setData(d);
       setIsLocked(d.is_locked);
       setLockedAt(d.locked_at);
-      setContingencyPct(d.contingency_pct);
       const sorted = [...d.phases].sort((a, b) => a.order - b.order);
       setPhases(sorted.map((p) => ({
-        phase_id: p.phase_id,
-        phase_type: p.phase_type,
-        order: p.order,
-        planned_start: p.planned_start,
-        planned_end: p.planned_end,
-        budget: p.budget,
+        phase_id:       p.phase_id,
+        phase_type:     p.phase_type,
+        display_name:   p.display_name,
+        order:          p.order,
+        planned_start:  p.planned_start,
+        planned_end:    p.planned_end,
+        budget:         p.budget,
         contingency_pct: p.contingency_pct,
-        status: p.status,
+        status:         p.status,
       })));
     }).finally(() => setLoading(false));
   }, [projectId]);
@@ -70,19 +63,32 @@ export default function Baseline() {
     setPhases((prev) => prev.map((p, i) => i === idx ? { ...p, [field]: val } : p));
   }, []);
 
-  // Derived totals
+  const updateContingency = useCallback((idx: number, val: number) => {
+    setPhases((prev) => prev.map((p, i) => i === idx ? { ...p, contingency_pct: val } : p));
+  }, []);
+
+  function startEditName(phaseId: number, current: string) {
+    setEditingName((prev) => ({ ...prev, [phaseId]: current }));
+  }
+
+  function commitName(phaseId: number) {
+    const val = editingName[phaseId]?.trim();
+    if (val) {
+      setPhases((prev) => prev.map((p) => p.phase_id === phaseId ? { ...p, display_name: val } : p));
+    }
+    setEditingName((prev) => { const next = { ...prev }; delete next[phaseId]; return next; });
+  }
+
+  // Derived totals (client-side; exact WD recalculated server-side on save)
   const rows = phases.map((p) => {
     const wd = networkDays(p.planned_start, p.planned_end);
-    const hours = wd * 8;
-    return { ...p, working_days: wd, planned_hours: hours };
+    return { ...p, working_days: wd, planned_hours: wd * 8 };
   });
 
-  const feasibilityBudget = rows.find((r) => r.phase_type === 'feasibility')?.budget ?? 0;
-  const totalBudget = rows.reduce((s, r) => s + r.budget, 0);
-  const contingencyAmount = feasibilityBudget * (contingencyPct / 100);
-  const totalForecast = totalBudget + contingencyAmount;
-  const totalWD = rows.reduce((s, r) => s + r.working_days, 0);
-  const totalHours = rows.reduce((s, r) => s + r.planned_hours, 0);
+  const totalBudget   = rows.reduce((s, r) => s + r.budget, 0);
+  const totalForecast = rows.reduce((s, r) => s + r.budget + r.budget * (r.contingency_pct / 100), 0);
+  const totalWD       = rows.reduce((s, r) => s + r.working_days, 0);
+  const totalHours    = rows.reduce((s, r) => s + r.planned_hours, 0);
 
   async function handleSave() {
     if (!projectId) return;
@@ -90,23 +96,24 @@ export default function Baseline() {
     setSaveError(null);
     try {
       await saveBaseline(projectId, phases.map((p) => ({
-        phase_id: p.phase_id,
-        planned_start: p.planned_start,
-        planned_end: p.planned_end,
-        contingency_pct: p.phase_type === 'feasibility' ? contingencyPct : 0,
+        phase_id:        p.phase_id,
+        planned_start:   p.planned_start,
+        planned_end:     p.planned_end,
+        contingency_pct: p.contingency_pct,
+        display_name:    p.display_name,
       })));
-      // BUG-07: reload to show server-calculated working days (includes public holidays)
       const fresh = await fetchBaseline(projectId);
       setData(fresh);
       setPhases(fresh.phases.sort((a, b) => a.order - b.order).map((p) => ({
-        phase_id: p.phase_id,
-        phase_type: p.phase_type,
-        order: p.order,
-        planned_start: p.planned_start,
-        planned_end: p.planned_end,
-        budget: p.budget,
+        phase_id:        p.phase_id,
+        phase_type:      p.phase_type,
+        display_name:    p.display_name,
+        order:           p.order,
+        planned_start:   p.planned_start,
+        planned_end:     p.planned_end,
+        budget:          p.budget,
         contingency_pct: p.contingency_pct,
-        status: p.status,
+        status:          p.status,
       })));
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -139,6 +146,10 @@ export default function Baseline() {
     </div>
   );
 
+  const inputCls = isLocked
+    ? 'bg-base/40 text-text-dim cursor-not-allowed'
+    : 'bg-accent/10 border border-accent/30 text-accent focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent';
+
   return (
     <div className="min-h-screen bg-base text-text-primary">
       <AppNav projectId={projectId} projectName={data?.project_name} />
@@ -163,23 +174,18 @@ export default function Baseline() {
             <p className="text-text-muted text-sm mt-1">
               {isLocked
                 ? `🔒 Bloccata il ${lockedAt ? new Date(lockedAt).toLocaleDateString('it-IT') : '—'}`
-                : 'Imposta le date di inizio/fine per ciascuna fase. I GG e le Ore si calcolano in automatico.'}
+                : 'Imposta date e contingenza per ogni fase. Il nome fase è modificabile inline.'}
             </p>
           </div>
           <div className="flex gap-3">
             {!isLocked && (
               <>
-                <button
-                  onClick={handleSave}
-                  disabled={saveLoading}
-                  className="px-4 py-2 rounded-lg text-sm font-medium bg-surface border border-border hover:border-accent/50 text-text-primary transition-all disabled:opacity-50"
-                >
+                <button onClick={handleSave} disabled={saveLoading}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-surface border border-border hover:border-accent/50 text-text-primary transition-all disabled:opacity-50">
                   {saveLoading ? 'Salvataggio…' : saved ? '✓ Salvato' : 'Salva'}
                 </button>
-                <button
-                  onClick={() => setShowLockModal(true)}
-                  className="px-4 py-2 rounded-lg text-sm font-semibold bg-rag-red/20 border border-rag-red/40 text-rag-red hover:bg-rag-red/30 transition-all"
-                >
+                <button onClick={() => setShowLockModal(true)}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold bg-rag-red/20 border border-rag-red/40 text-rag-red hover:bg-rag-red/30 transition-all">
                   🔒 Blocca Baseline
                 </button>
               </>
@@ -193,7 +199,6 @@ export default function Baseline() {
           </div>
         )}
 
-        {/* Locked banner */}
         {isLocked && (
           <div className="bg-rag-yellow/10 border border-rag-yellow/30 rounded-xl px-5 py-3 text-rag-yellow text-sm">
             ⚠️ La baseline è bloccata. I dati sono in sola lettura.
@@ -202,7 +207,7 @@ export default function Baseline() {
 
         {/* Table */}
         <div className="overflow-x-auto rounded-2xl border border-border">
-          <table className="w-full text-sm min-w-[900px]">
+          <table className="w-full text-sm min-w-[960px]">
             <thead>
               <tr className="border-b border-border bg-surface-2">
                 {['Fase', 'Inizio', 'Fine', 'GG Lavorativi *', 'Ore Pianificate', 'Budget £', 'Contingenza %'].map((h) => (
@@ -213,57 +218,64 @@ export default function Baseline() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, idx) => {
-                const isFeasibility = row.phase_type === 'feasibility';
-                const inputCls = isLocked
-                  ? 'bg-base/40 text-text-dim cursor-not-allowed'
-                  : 'bg-accent/10 border border-accent/30 text-accent focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent';
-                return (
-                  <tr key={row.phase_id} className="border-b border-border/50 hover:bg-surface-2/40 transition-colors">
-                    <td className="px-4 py-3 font-semibold text-text-primary">{PHASE_LABEL[row.phase_type]}</td>
-                    <td className="px-4 py-3">
-                      <DateInput
-                        value={row.planned_start}
-                        disabled={isLocked}
-                        onChange={(val) => updatePhase(idx, 'planned_start', val)}
-                        className={`rounded-lg px-2 py-1 text-sm w-36 ${inputCls}`}
+              {rows.map((row, idx) => (
+                <tr key={row.phase_id} className="border-b border-border/50 hover:bg-surface-2/40 transition-colors">
+                  {/* Fase — inline rename */}
+                  <td className="px-4 py-3 font-semibold text-text-primary">
+                    {isLocked ? (
+                      <span>{row.display_name}</span>
+                    ) : editingName[row.phase_id] !== undefined ? (
+                      <input
+                        autoFocus
+                        value={editingName[row.phase_id]}
+                        onChange={(e) => setEditingName((prev) => ({ ...prev, [row.phase_id]: e.target.value }))}
+                        onBlur={() => commitName(row.phase_id)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') commitName(row.phase_id); if (e.key === 'Escape') setEditingName((prev) => { const n = {...prev}; delete n[row.phase_id]; return n; }); }}
+                        className="bg-base border border-accent/40 text-text-primary rounded px-2 py-0.5 text-sm w-40 focus:outline-none focus:border-accent"
                       />
-                    </td>
-                    <td className="px-4 py-3">
-                      <DateInput
-                        value={row.planned_end}
+                    ) : (
+                      <button
+                        onClick={() => startEditName(row.phase_id, row.display_name)}
+                        className="group flex items-center gap-1.5 hover:text-accent transition-colors"
+                        title="Clicca per rinominare"
+                      >
+                        {row.display_name}
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                        </svg>
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <DateInput value={row.planned_start} disabled={isLocked}
+                      onChange={(val) => updatePhase(idx, 'planned_start', val)}
+                      className={`rounded-lg px-2 py-1 text-sm w-36 ${inputCls}`} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <DateInput value={row.planned_end} disabled={isLocked}
+                      onChange={(val) => updatePhase(idx, 'planned_end', val)}
+                      className={`rounded-lg px-2 py-1 text-sm w-36 ${inputCls}`} />
+                  </td>
+                  <td className="px-4 py-3 font-medium text-text-primary">{row.working_days}</td>
+                  <td className="px-4 py-3 text-text-muted">{row.planned_hours}</td>
+                  <td className="px-4 py-3 font-medium text-text-primary">{fmt(row.budget)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number" min={0} max={100}
+                        value={row.contingency_pct}
                         disabled={isLocked}
-                        onChange={(val) => updatePhase(idx, 'planned_end', val)}
-                        className={`rounded-lg px-2 py-1 text-sm w-36 ${inputCls}`}
+                        onChange={(e) => updateContingency(idx, parseFloat(e.target.value) || 0)}
+                        className={`rounded-lg px-2 py-1 text-sm w-20 text-center ${inputCls}`}
                       />
-                    </td>
-                    <td className="px-4 py-3 font-medium text-text-primary">{row.working_days}</td>
-                    <td className="px-4 py-3 text-text-muted">{row.planned_hours}</td>
-                    <td className="px-4 py-3 font-medium text-text-primary">{fmt(row.budget)}</td>
-                    <td className="px-4 py-3">
-                      {isFeasibility ? (
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="number"
-                            min={0}
-                            max={100}
-                            value={contingencyPct}
-                            disabled={isLocked}
-                            onChange={(e) => setContingencyPct(parseFloat(e.target.value) || 0)}
-                            className={`rounded-lg px-2 py-1 text-sm w-20 text-center ${inputCls}`}
-                          />
-                          <span className="text-text-muted">%</span>
-                          {contingencyPct > 0 && (
-                            <span className="text-text-dim text-xs">+{fmt(feasibilityBudget * contingencyPct / 100)}</span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-text-dim text-xs">—</span>
+                      <span className="text-text-muted">%</span>
+                      {row.contingency_pct > 0 && (
+                        <span className="text-text-dim text-xs">+{fmt(row.budget * row.contingency_pct / 100)}</span>
                       )}
-                    </td>
-                  </tr>
-                );
-              })}
+                    </div>
+                  </td>
+                </tr>
+              ))}
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-border bg-surface-2">
@@ -280,20 +292,18 @@ export default function Baseline() {
 
         <p className="text-text-dim text-xs -mt-2">* I GG mostrati escludono le festività. Il valore definitivo (con festività IT) viene calcolato al salvataggio.</p>
 
-        {/* Forecast summary card */}
-        <div className="grid sm:grid-cols-3 gap-4">
+        {/* Forecast summary */}
+        <div className="grid sm:grid-cols-2 gap-4">
           <div className="bg-surface border border-border rounded-2xl px-5 py-4 shadow-card">
             <p className="text-text-muted text-xs font-medium uppercase tracking-wider mb-1">Budget Totale</p>
             <p className="text-xl font-bold text-text-primary">{fmt(totalBudget)}</p>
           </div>
-          <div className="bg-surface border border-border rounded-2xl px-5 py-4 shadow-card">
-            <p className="text-text-muted text-xs font-medium uppercase tracking-wider mb-1">Contingenza (Feasibility)</p>
-            <p className="text-xl font-bold text-rag-yellow">+{fmt(contingencyAmount)}</p>
-            <p className="text-text-dim text-xs">{contingencyPct}% di {fmt(feasibilityBudget)}</p>
-          </div>
           <div className="bg-surface border border-accent/30 rounded-2xl px-5 py-4 shadow-glow-accent">
             <p className="text-text-muted text-xs font-medium uppercase tracking-wider mb-1">BASELINE TOTAL FORECAST</p>
             <p className="text-2xl font-bold text-accent">{fmt(totalForecast)}</p>
+            {totalForecast > totalBudget && (
+              <p className="text-text-dim text-xs mt-1">+{fmt(totalForecast - totalBudget)} contingenza totale</p>
+            )}
           </div>
         </div>
       </main>

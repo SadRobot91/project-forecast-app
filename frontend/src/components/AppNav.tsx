@@ -27,6 +27,7 @@ export default function AppNav({ projectId, projectName }: Props) {
   const globalLinks: NavItem[] = [
     { label: 'Portfolio', to: '/projects', end: true },
     { label: 'Registro Risorse', to: '/resources' },
+    { label: 'Impostazioni', to: '/settings' },
   ];
 
   return (

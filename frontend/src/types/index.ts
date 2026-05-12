@@ -18,7 +18,8 @@ export interface AuthResponse {
 
 export type RAGStatus = 'IN_LINEA' | 'A_RISCHIO' | 'FUORI_BUDGET';
 
-export type PhaseType = 'feasibility' | 'planning_design' | 'build' | 'deployment' | 'closure';
+// PhaseType kept as internal DB key — UI always uses display_name
+export type PhaseType = 'feasibility' | 'planning_design' | 'build' | 'deployment' | 'closure' | string;
 export type ProjectStatus = 'active' | 'on_hold' | 'closed' | 'archived';
 export type PhaseStatus = 'not_started' | 'in_progress' | 'completed';
 
@@ -27,12 +28,23 @@ export interface ProjectSummary {
   name: string;
   status: ProjectStatus;
   rag_status: RAGStatus;
-  current_phase: PhaseType | null;
+  current_phase: string | null;
   budget_total: number;
   budget_spent: number;
   budget_pct: number;
   days_remaining: number;
   currency: string;
+}
+
+// ─── Phase Template ───────────────────────────
+
+export interface PhaseTemplate {
+  id: number;
+  name: string;           // internal key
+  display_name: string;
+  order: number;
+  default_contingency_pct: number;
+  active: boolean;
 }
 
 // ─── Dashboard ───────────────────────────────
@@ -53,6 +65,7 @@ export interface DashboardKPIs {
 export interface PhaseBudgetRow {
   phase_id: number;
   phase_type: PhaseType;
+  display_name: string;
   planned_start: string;
   planned_end: string;
   working_days: number;
@@ -84,6 +97,7 @@ export interface DashboardData {
 export interface BaselinePhase {
   phase_id: number;
   phase_type: PhaseType;
+  display_name: string;
   order: number;
   planned_start: string;
   planned_end: string;
@@ -101,7 +115,6 @@ export interface BaselineData {
   phases: BaselinePhase[];
   is_locked: boolean;
   locked_at: string | null;
-  contingency_pct: number;
   total_budget: number;
   total_forecast: number;
 }
@@ -118,7 +131,7 @@ export interface Resource {
 export interface AllocationCell {
   resource_id: number;
   phase_id: number;
-  week_start: string; // Monday of the week — YYYY-MM-DD
+  week_start: string;
   fte: number;
   working_days: number;
   weekly_cost: number;
@@ -127,6 +140,7 @@ export interface AllocationCell {
 export interface AllocationPhaseMatrix {
   phase_id: number;
   phase_type: PhaseType;
+  display_name: string;
   planned_start: string;
   planned_end: string;
   resources: Resource[];
@@ -223,6 +237,7 @@ export interface GanttTask {
 export interface GanttPhaseData {
   phase_id: number;
   phase_type: PhaseType;
+  display_name: string;
   planned_start: string;
   planned_end: string;
   status: PhaseStatus;

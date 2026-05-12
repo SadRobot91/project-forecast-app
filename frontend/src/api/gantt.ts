@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { GanttData, GanttTask, PhaseType, TaskStatus } from '../types';
+import type { GanttData, GanttTask, TaskStatus } from '../types';
 import { MOCK_GANTT, MOCK_PROJECTS } from '../mocks/mockData';
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
@@ -41,15 +41,16 @@ export async function updateTask(projectId: string, taskId: number, data: TaskPa
 
 export async function createTask(
   projectId: string,
-  data: TaskPayload & { phase_id: number; phase_type: PhaseType }
+  data: TaskPayload & { phase_id: number }
 ): Promise<GanttTask> {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 300));
+    const phase = MOCK_GANTT.phases.find((p) => p.phase_id === data.phase_id);
     const newTask: GanttTask = {
       id: Math.floor(Math.random() * 1000) + 100,
       project_id: parseInt(projectId, 10),
       phase_id: data.phase_id,
-      phase_type: data.phase_type,
+      phase_type: phase?.phase_type ?? '',
       name: data.name ?? 'Nuovo task',
       owner: data.owner ?? null,
       start_date: data.start_date ?? '',
@@ -59,7 +60,6 @@ export async function createTask(
       actual_date: data.actual_date ?? null,
       status: data.status ?? 'not_started',
     };
-    const phase = MOCK_GANTT.phases.find((p) => p.phase_id === data.phase_id);
     if (phase) phase.tasks.push(newTask);
     return newTask;
   }

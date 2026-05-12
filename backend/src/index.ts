@@ -7,6 +7,7 @@ import baselineRouter from './routes/baseline';
 import ganttRouter from './routes/gantt';
 import projectsRouter from './routes/projects';
 import dashboardRouter from './routes/dashboard';
+import phaseTemplatesRouter from './routes/phaseTemplates';
 
 dotenv.config();
 
@@ -22,6 +23,7 @@ app.use('/api/projects/:id/baseline', baselineRouter);
 app.use('/api/projects/:id/gantt', ganttRouter);
 app.use('/api/projects/:id/allocation', allocationsRouter);
 app.use('/api/projects/:id/ongoing', ongoingRouter);
+app.use('/api/phase-templates', phaseTemplatesRouter);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });

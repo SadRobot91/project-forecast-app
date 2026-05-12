@@ -4,15 +4,7 @@ import AppNav from '../components/AppNav';
 import FTECell from '../components/FTECell';
 import { fetchAllocation, saveAllocationPhase, createResource, fetchResourceRegistry } from '../api/allocation';
 import { weeksInRange, fmtWeek } from '../utils/networkDays';
-import type { AllocationData, AllocationPhaseMatrix, AllocationCell, Resource, PhaseType } from '../types';
-
-const PHASE_LABEL: Record<PhaseType, string> = {
-  feasibility:     'Feasibility',
-  planning_design: 'Planning & Design',
-  build:           'Build',
-  deployment:      'Deployment',
-  closure:         'Closure',
-};
+import type { AllocationData, AllocationPhaseMatrix, AllocationCell, Resource } from '../types';
 
 function fmt(n: number) {
   return `£${Math.round(n).toLocaleString('en-GB')}`;
@@ -192,7 +184,7 @@ function PhaseBlock({ phase, projectId, allResources, crossTotals, onSaved }: Ph
       >
         <div className="flex items-center gap-3">
           <span className="text-text-dim text-sm">{open ? '▼' : '▶'}</span>
-          <span className="font-semibold text-text-primary">{PHASE_LABEL[phase.phase_type]}</span>
+          <span className="font-semibold text-text-primary">{phase.display_name}</span>
           <span className="text-text-dim text-xs">{fmtDate(phase.planned_start)} → {fmtDate(phase.planned_end)}</span>
         </div>
         <div className="flex items-center gap-4 text-xs text-text-muted">
