@@ -24,9 +24,11 @@ export default function DateInput({ value, onChange, disabled, min, max, classNa
       max={max}
       disabled={disabled}
       title={title}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(e) => {
+        onChange(e.target.value);
+        requestAnimationFrame(() => ref.current?.blur());
+      }}
       onClick={onClick}
-      onDoubleClick={() => ref.current?.blur()}
       className={className}
     />
   );
