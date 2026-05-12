@@ -1,6 +1,7 @@
 import type {
   AuthResponse, DashboardData, ProjectSummary,
   BaselineData, AllocationData, ResourceRegistryData, GanttData,
+  OngoingData, OngoingSnapshot,
 } from '../types';
 
 // ─────────────────────────────────────────────
@@ -344,6 +345,40 @@ export const MOCK_GANTT: GanttData = {
   ],
 };
 
+// ─── Ongoing ──────────────────────────────────
 
+export const MOCK_ONGOING_SNAPSHOT: OngoingSnapshot = {
+  id: 1,
+  project_id: 1,
+  reporting_date: '2026-04-30',
+  hours_spent_to_date: 320,
+  cost_spent_to_date: 36200,
+  working_days_used: 58,
+  working_days_remaining: 83,
+  source: 'manual',
+  created_at: '2026-04-30T10:00:00Z',
+};
 
+export const MOCK_ONGOING_HISTORY: OngoingSnapshot[] = [
+  MOCK_ONGOING_SNAPSHOT,
+  {
+    id: 2, project_id: 1, reporting_date: '2026-03-31',
+    hours_spent_to_date: 192, cost_spent_to_date: 21800,
+    working_days_used: 35, working_days_remaining: 106,
+    source: 'manual', created_at: '2026-03-31T09:00:00Z',
+  },
+  {
+    id: 3, project_id: 1, reporting_date: '2026-02-28',
+    hours_spent_to_date: 80, cost_spent_to_date: 9400,
+    working_days_used: 16, working_days_remaining: 125,
+    source: 'manual', created_at: '2026-02-28T09:00:00Z',
+  },
+];
+
+export const MOCK_ONGOING: OngoingData = {
+  project_name: 'RXI Platform',
+  budget_total: 64600,
+  total_working_days: 141,
+  snapshot: MOCK_ONGOING_SNAPSHOT,
+};
 

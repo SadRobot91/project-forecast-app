@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { ManualFallbackProvider } from '../services/ongoing/ManualFallbackProvider';
 import { KeyedinApiProvider } from '../services/ongoing/KeyedinApiProvider';
 import { SnapshotData } from '../services/ongoing/OngoingDataProvider';
+import { query } from '../db';
 
 const router = Router({ mergeParams: true });
 const manualProvider = new ManualFallbackProvider();
@@ -11,9 +12,23 @@ const keyedinProvider = new KeyedinApiProvider();
 router.get('/', async (req, res) => {
   const { id: projectId } = req.params as { id: string };
   try {
+    const projRes = await query(
+      `SELECT p.name,
+              COALESCE((SELECT SUM(ae.weekly_cost) FROM "AllocationEntry" ae WHERE ae.project_id = p.id), 0)::numeric as budget_total,
+              COALESCE((SELECT SUM(pp.working_days) FROM "ProjectPhase" pp WHERE pp.project_id = p.id), 0)::integer as total_working_days
+       FROM "Project" p WHERE p.id = $1`,
+      [projectId]
+    );
+    if (!projRes.rowCount) return res.status(404).json({ error: 'Project not found' });
+
     const snapshot = await manualProvider.getLatestSnapshot(projectId);
-    if (!snapshot) return res.status(404).json({ error: 'No ongoing snapshot found' });
-    res.json(snapshot);
+
+    res.json({
+      project_name:        projRes.rows[0].name,
+      budget_total:        parseFloat(projRes.rows[0].budget_total),
+      total_working_days:  parseInt(projRes.rows[0].total_working_days, 10),
+      snapshot:            snapshot ?? null,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });
@@ -59,6 +74,31 @@ router.post('/', async (req, res) => {
     };
     const saved = await manualProvider.saveSnapshot(data);
     res.status(201).json(saved);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/projects/:id/ongoing/:snapshotId
+// Only allowed within 24 hours of creation (deletion window)
+router.delete('/:snapshotId', async (req, res) => {
+  const { id: projectId, snapshotId } = req.params as { id: string; snapshotId: string };
+  try {
+    const existing = await query(
+      'SELECT id, created_at FROM "OngoingSnapshot" WHERE id = $1 AND project_id = $2',
+      [snapshotId, projectId],
+    );
+    if (!existing.rowCount) return res.status(404).json({ error: 'Snapshot not found' });
+
+    const createdAt = new Date(existing.rows[0].created_at);
+    const windowMs = 24 * 60 * 60 * 1000;
+    if (Date.now() - createdAt.getTime() > windowMs) {
+      return res.status(403).json({ error: 'Deletion window expired (24h). Snapshot is now locked.' });
+    }
+
+    await query('DELETE FROM "OngoingSnapshot" WHERE id = $1', [snapshotId]);
+    res.status(204).end();
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import AppNav from '../components/AppNav';
+import DateInput from '../components/DateInput';
 import { fetchGantt, updateTask, createTask, deleteTask, type TaskPayload } from '../api/gantt';
 import type { GanttData, GanttPhaseData, GanttTask, PhaseType, TaskStatus } from '../types';
 
@@ -205,24 +206,22 @@ function TaskModal({ state, projectId, onClose, onSaved }: TaskModalProps) {
             <label className="block text-xs text-text-muted mb-1 uppercase tracking-wider">
               {form.is_milestone ? 'Data pianificata *' : 'Inizio *'}
             </label>
-            <input
-              type="date"
+            <DateInput
               value={form.start_date}
               min={form.phaseStart || undefined}
               max={form.phaseEnd || undefined}
-              onChange={(e) => set({ start_date: e.target.value })}
+              onChange={(val) => set({ start_date: val })}
               className="w-full bg-base border border-border text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
             />
           </div>
           {!form.is_milestone && (
             <div>
               <label className="block text-xs text-text-muted mb-1 uppercase tracking-wider">Fine *</label>
-              <input
-                type="date"
+              <DateInput
                 value={form.end_date}
                 min={form.start_date || form.phaseStart || undefined}
                 max={form.phaseEnd || undefined}
-                onChange={(e) => set({ end_date: e.target.value })}
+                onChange={(val) => set({ end_date: val })}
                 className="w-full bg-base border border-border text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
               />
             </div>
@@ -238,10 +237,9 @@ function TaskModal({ state, projectId, onClose, onSaved }: TaskModalProps) {
         {form.is_milestone && (
           <div>
             <label className="block text-xs text-text-muted mb-1 uppercase tracking-wider">Data effettiva</label>
-            <input
-              type="date"
+            <DateInput
               value={form.actual_date}
-              onChange={(e) => set({ actual_date: e.target.value })}
+              onChange={(val) => set({ actual_date: val })}
               className="w-full bg-base border border-border text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
             />
           </div>
@@ -438,12 +436,11 @@ function FullView({ phases, projectStart, totalWidth, weeks, collapsed, onToggle
                         {task.owner && <p className="text-xs text-text-dim truncate">{task.owner}</p>}
                       </div>
                       {task.is_milestone && (
-                        <input
-                          type="date"
+                        <DateInput
                           value={task.actual_date ?? ''}
                           title="Data effettiva"
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) => onUpdateMilestone(task.id, e.target.value)}
+                          onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                          onChange={(val) => onUpdateMilestone(task.id, val)}
                           className="w-24 flex-shrink-0 text-xs bg-base border border-border rounded px-1 py-0.5 text-text-muted focus:outline-none focus:border-accent"
                         />
                       )}
@@ -519,11 +516,10 @@ function MilestoneView({ phases, projectStart, totalWidth, weeks, onUpdateMilest
                 )}
               </div>
             </div>
-            <input
-              type="date"
+            <DateInput
               value={task.actual_date ?? ''}
               title="Data effettiva"
-              onChange={(e) => onUpdateMilestone(task.id, e.target.value)}
+              onChange={(val) => onUpdateMilestone(task.id, val)}
               className="w-24 flex-shrink-0 text-xs bg-base border border-border rounded px-1 py-0.5 text-text-muted focus:outline-none focus:border-accent"
             />
           </div>

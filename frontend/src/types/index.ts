@@ -172,6 +172,35 @@ export interface ResourceRegistryFilters {
   date_to?: string;
 }
 
+// ─── Ongoing ─────────────────────────────────
+
+export interface OngoingSnapshot {
+  id: number;
+  project_id: number;
+  reporting_date: string;
+  hours_spent_to_date: number;
+  cost_spent_to_date: number;
+  working_days_used: number;
+  working_days_remaining: number;
+  source: 'manual' | 'keyedin_api';
+  created_at: string;
+}
+
+export interface OngoingData {
+  project_name: string;
+  budget_total: number;
+  total_working_days: number;
+  snapshot: OngoingSnapshot | null;
+}
+
+export interface OngoingPayload {
+  reporting_date: string;
+  cost_spent_to_date: number;
+  hours_spent_to_date: number;
+  working_days_used: number;
+  working_days_remaining: number;
+}
+
 // ─── Gantt ────────────────────────────────────
 
 export type TaskStatus = 'not_started' | 'in_progress' | 'completed';
