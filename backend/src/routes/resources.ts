@@ -73,10 +73,17 @@ router.get('/', async (req, res) => {
 // POST /api/resources
 router.post('/', async (req, res) => {
   const { name, role, day_rate } = req.body;
+  if (!name || typeof name !== 'string' || name.trim() === '') {
+    return res.status(400).json({ error: 'name is required' });
+  }
+  const rate = parseFloat(day_rate);
+  if (isNaN(rate) || rate <= 0) {
+    return res.status(400).json({ error: 'day_rate must be a positive number' });
+  }
   try {
     const result = await query(
       'INSERT INTO "Resource" (name, role, day_rate) VALUES ($1, $2, $3) RETURNING *',
-      [name, role, day_rate]
+      [name.trim(), role ?? '', rate]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -89,10 +96,17 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const { id } = req.params;
   const { name, role, day_rate } = req.body;
+  if (!name || typeof name !== 'string' || name.trim() === '') {
+    return res.status(400).json({ error: 'name is required' });
+  }
+  const rate = parseFloat(day_rate);
+  if (isNaN(rate) || rate <= 0) {
+    return res.status(400).json({ error: 'day_rate must be a positive number' });
+  }
   try {
     const result = await query(
       'UPDATE "Resource" SET name = $1, role = $2, day_rate = $3 WHERE id = $4 RETURNING *',
-      [name, role, day_rate, id]
+      [name.trim(), role ?? '', rate, id]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Not found' });
     res.json(result.rows[0]);

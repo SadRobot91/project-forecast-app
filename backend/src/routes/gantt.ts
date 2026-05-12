@@ -100,8 +100,8 @@ router.post('/tasks', async (req, res) => {
 
   try {
     const phaseRes = await query(
-      'SELECT phase_type, planned_start, planned_end FROM "ProjectPhase" WHERE id = $1',
-      [phase_id]
+      'SELECT phase_type, planned_start, planned_end FROM "ProjectPhase" WHERE id = $1 AND project_id = $2',
+      [phase_id, projectId]
     );
     if (!phaseRes.rowCount) return res.status(404).json({ error: 'Phase not found' });
 

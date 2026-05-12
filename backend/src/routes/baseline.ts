@@ -76,6 +76,21 @@ router.put('/', async (req, res) => {
     phases: { phase_id: number; planned_start: string; planned_end: string; contingency_pct?: number }[];
   };
 
+  if (!Array.isArray(phases) || phases.length === 0) {
+    return res.status(400).json({ error: 'phases must be a non-empty array' });
+  }
+  for (const p of phases) {
+    if (!p.phase_id || typeof p.phase_id !== 'number') {
+      return res.status(400).json({ error: 'each phase must have a numeric phase_id' });
+    }
+    if (p.contingency_pct !== undefined) {
+      const pct = Number(p.contingency_pct);
+      if (isNaN(pct) || pct < 0 || pct > 100) {
+        return res.status(400).json({ error: 'contingency_pct must be between 0 and 100' });
+      }
+    }
+  }
+
   try {
     const baselineRes = await query('SELECT locked_at FROM "Baseline" WHERE project_id = $1', [projectId]);
     if (baselineRes.rows[0]?.locked_at) {
