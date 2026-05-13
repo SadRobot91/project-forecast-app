@@ -13,6 +13,38 @@ Questo documento elenca tutto ciò che va fatto prima di iniziare lo Step 10
 
 ---
 
+## 📍 Stato corrente (aggiornato dopo Step C)
+
+Quattro step completati, ognuno con la sua branch + PR aperti contro
+`feature/step-9-pianificazione`. **Ordine di merge consigliato: A → B → I → C.**
+Step D è il prossimo, parte dopo che C è mergiato.
+
+| Step | Stato | Branch | Note |
+|------|-------|--------|------|
+| A — Lock check su PUT /allocation | ✅ done, PR aperta | `fix/step-a-baseline-lock-enforcement` | Stopgap, rimosso da B |
+| B — Snapshot BAC sulla Baseline | ✅ done, PR aperta | `fix/step-b-baseline-snapshot` | Rimuove lock di A. Migration 008. |
+| I — `PATCH /phases/:id` working copy | ✅ done backend, ⏳ frontend | `fix/step-i-phase-dates-mutable` | Anticipato vs ordine originale — chiude il loop di B |
+| C — `AllocationAggregator` service | ✅ done, PR aperta | `fix/step-c-allocation-aggregator` | Single source of truth per Σ FTE. Abilita D. |
+| D — FTE cap enforcement sul write | ⏳ next | — | Usa `canAllocate` di C + `pg_advisory_xact_lock` |
+| E — `phase_id` su OngoingSnapshot | ⏳ pending | — | Prerequisito di F |
+| F — Phase Financial Engine | ⏳ pending | — | Dopo E |
+| G — day_rate cascade/versioning | ⏳ pending | — | Indipendente |
+| H — Auth backend | ⏳ pending | — | Workstream parallelo |
+| J — Re-baselining versioning | 🌱 future | — | Post-auth |
+
+### Per riprendere da fresh session
+
+1. **Leggere prima `ARCHITECTURE_AS_IS.md`** (stato as-is del codice, 7 problematiche numerate)
+2. Leggere questo documento (`NEXT_STEPS.md`) per la roadmap operativa
+3. Verificare le PR aperte su GitHub per i 4 step già fatti
+4. Se tutte le PR sono mergiate: `git checkout feature/step-9-pianificazione && git pull` e partire da **Step D**
+5. Se le PR sono ancora aperte: `git checkout fix/step-c-allocation-aggregator` per vedere lo stato più avanzato del codice
+
+I dettagli di ogni step fatto (file toccati, test aggiunti, scelte di design) sono
+nei commit message — verbosi di proposito proprio per questo caso.
+
+---
+
 ## 1. Fix architetturali — debito bloccante
 
 Vedi `ARCHITECTURE_AS_IS.md` per i dettagli completi. Qui solo il riepilogo
@@ -420,15 +452,15 @@ Per dichiarare lo Step 9 chiuso e poter iniziare lo Step 10 (seeding dati
 reali del progetto PChallenges) i seguenti devono essere fatti:
 
 **Bloccanti** (definition of done):
-- [ ] Step A — Lock check su PUT /allocation
-- [ ] Step B — Snapshot totali in Baseline
-- [ ] Step C — Resource Registry materializzato
-- [ ] Step D — FTE cap enforcement sulla scrittura
+- [x] Step A — Lock check su PUT /allocation *(PR `fix/step-a-baseline-lock-enforcement`)*
+- [x] Step B — Snapshot BAC su Baseline *(PR `fix/step-b-baseline-snapshot`)*
+- [x] Step C — AllocationAggregator service-layer *(PR `fix/step-c-allocation-aggregator`)*
+- [ ] Step D — FTE cap enforcement sulla scrittura *(prossimo)*
 
 **Fortemente consigliati prima del seeding** (ridurranno il rework):
 - [ ] Step E — phase_id su OngoingSnapshot
 - [ ] Step F — Phase Financial Engine
-- [ ] Step I — Date fase mutabili dopo lock (richiesto da casistiche reali)
+- [x] Step I — Date fase mutabili dopo lock — backend done *(PR `fix/step-i-phase-dates-mutable`)*, frontend pending
 - [ ] 3.1 — Dashboard KPI cards a 4
 - [ ] 3.4 — Avanzamento dedup entry point
 
