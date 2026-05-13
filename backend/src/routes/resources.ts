@@ -104,38 +104,11 @@ router.put('/:id', async (req, res) => {
     return res.status(400).json({ error: 'day_rate must be a positive number' });
   }
   try {
-    // Step A: if the resource has allocations on any project with a locked
-    // baseline, reject changes to day_rate. weekly_cost on existing entries
-    // is materialized at INSERT time but feeds the SUM that produces the
-    // locked baseline's BAC — a day_rate change would alter the BAC
-    // indirectly once Step G (cascade or versioning) is implemented.
-    // Until then we conservatively block any PUT that would update the rate.
-    const currentRes = await query(
-      'SELECT day_rate FROM "Resource" WHERE id = $1',
-      [id]
-    );
-    if (currentRes.rowCount === 0) {
-      return res.status(404).json({ error: 'Not found' });
-    }
-    const rateChanged = parseFloat(currentRes.rows[0].day_rate) !== rate;
-
-    if (rateChanged) {
-      const lockedProjects = await query(
-        `SELECT DISTINCT p.id, p.name
-           FROM "AllocationEntry" ae
-           JOIN "Baseline" b ON b.project_id = ae.project_id
-           JOIN "Project" p ON p.id = ae.project_id
-          WHERE ae.resource_id = $1 AND b.locked_at IS NOT NULL`,
-        [id]
-      );
-      if (lockedProjects.rowCount && lockedProjects.rowCount > 0) {
-        return res.status(400).json({
-          error: 'Cannot change day_rate: resource is allocated on locked baselines.',
-          locked_projects: lockedProjects.rows,
-        });
-      }
-    }
-
+    // Step B: after lock the BAC is snapshotted on Baseline. day_rate
+    // changes affect only future weekly_cost calculations (when an
+    // allocation cell is re-saved); they do not retroactively alter the
+    // locked baseline. Step G (day_rate versioning) will track rate
+    // history for full traceability.
     const result = await query(
       'UPDATE "Resource" SET name = $1, role = $2, day_rate = $3 WHERE id = $4 RETURNING *',
       [name.trim(), role ?? '', rate, id]
