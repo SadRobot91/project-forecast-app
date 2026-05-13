@@ -258,6 +258,126 @@ describe('GET /api/resources/registry', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// PHASES — Step I: working-copy schedule edits (planned dates, status)
+// Allowed even when the baseline is locked. Does NOT touch BAC parameters.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('PATCH /api/projects/:id/phases/:phase_id', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./phases');
+    const outer = express();
+    outer.use(express.json());
+    outer.use('/api/projects/:id/phases', router);
+    app = outer;
+  });
+
+  it('updates planned_end and recomputes working_days even on a locked baseline', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{                          // phase lookup
+      planned_start: new Date('2026-03-02'),
+      planned_end:   new Date('2026-06-19'),
+    }]));
+    mockQuery.mockResolvedValueOnce(dbOk([                            // holidays
+      { date: new Date('2026-04-06') },
+    ]));
+    mockQuery.mockResolvedValueOnce(dbOk([{                           // UPDATE RETURNING
+      id: 3, project_id: 1, planned_start: new Date('2026-03-02'),
+      planned_end: new Date('2026-07-10'), working_days: 5, planned_hours: 40,
+      status: 'in_progress',
+    }]));
+
+    const res = await request(app)
+      .patch('/api/projects/1/phases/3')
+      .send({ planned_end: '2026-07-10' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.planned_end).toContain('2026-07-10');
+
+    // Crucially: NO query against Baseline.locked_at — this endpoint
+    // is the working-copy escape hatch
+    const lockCheck = mockQuery.mock.calls.find((c: any[]) =>
+      typeof c[0] === 'string' && c[0].includes('Baseline')
+    );
+    expect(lockCheck).toBeUndefined();
+
+    // UPDATE must include planned_end, working_days, planned_hours
+    const updateCall = mockQuery.mock.calls.find((c: any[]) =>
+      typeof c[0] === 'string' && c[0].includes('UPDATE "ProjectPhase"')
+    );
+    expect(updateCall![0]).toContain('planned_end');
+    expect(updateCall![0]).toContain('working_days');
+    expect(updateCall![0]).toContain('planned_hours');
+  });
+
+  it('updates status alone without touching dates', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{
+      planned_start: new Date('2026-03-02'),
+      planned_end:   new Date('2026-06-19'),
+    }]));
+    mockQuery.mockResolvedValueOnce(dbOk([{ id: 3, status: 'completed' }]));
+
+    const res = await request(app)
+      .patch('/api/projects/1/phases/3')
+      .send({ status: 'completed' });
+
+    expect(res.status).toBe(200);
+
+    // No holidays query — dates didn't change, so working_days
+    // recomputation is skipped
+    const holidaysCall = mockQuery.mock.calls.find((c: any[]) =>
+      typeof c[0] === 'string' && c[0].includes('PublicHoliday')
+    );
+    expect(holidaysCall).toBeUndefined();
+
+    const updateCall = mockQuery.mock.calls.find((c: any[]) =>
+      typeof c[0] === 'string' && c[0].includes('UPDATE "ProjectPhase"')
+    );
+    expect(updateCall![0]).toContain('status');
+    expect(updateCall![0]).not.toContain('working_days');
+  });
+
+  it('rejects invalid status', async () => {
+    const res = await request(app)
+      .patch('/api/projects/1/phases/3')
+      .send({ status: 'archived' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/status must be one of/);
+  });
+
+  it('rejects when planned_end is before planned_start (using current value for the other side)', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{
+      planned_start: new Date('2026-03-02'),
+      planned_end:   new Date('2026-06-19'),
+    }]));
+
+    const res = await request(app)
+      .patch('/api/projects/1/phases/3')
+      .send({ planned_end: '2026-02-01' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/planned_end must be on or after planned_start/);
+  });
+
+  it('returns 404 when phase does not belong to the project', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([], 0));
+    const res = await request(app)
+      .patch('/api/projects/1/phases/999')
+      .send({ status: 'completed' });
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects empty body', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{
+      planned_start: new Date('2026-03-02'),
+      planned_end:   new Date('2026-06-19'),
+    }]));
+    const res = await request(app).patch('/api/projects/1/phases/3').send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/no fields to update/i);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // GANTT — task CRUD
 // ═══════════════════════════════════════════════════════════════════════════════
 
