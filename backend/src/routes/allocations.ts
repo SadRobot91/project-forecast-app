@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query } from '../db';
-import { calculateNetworkDays, validateFTE } from '../services/computations';
+import { calculateNetworkDays } from '../services/computations';
+import { getWeeklyTotal } from '../services/allocationAggregator';
 
 const router = Router({ mergeParams: true });
 
@@ -127,19 +128,10 @@ router.put('/', async (req, res) => {
   const { phase_id, allocations } = req.body;
 
   try {
-    // Step A: reject if baseline is locked. weekly_cost feeds phase budget,
-    // so modifying allocations after lock would retroactively alter the BAC.
-    const lockCheck = await query(
-      'SELECT locked_at FROM "Baseline" WHERE project_id = $1',
-      [projectId]
-    );
-    if (lockCheck.rows[0]?.locked_at) {
-      return res.status(400).json({
-        error: 'Baseline is locked. Cannot modify allocations.',
-        locked_at: lockCheck.rows[0].locked_at,
-      });
-    }
-
+    // Step B: after lock, AllocationEntry is the working copy and remains
+    // mutable. The locked baseline is preserved as a snapshot on the
+    // Baseline row (total_budget_at_lock + phase_snapshot_at_lock), so
+    // updates here do not retroactively alter the BAC.
     await query('BEGIN');
     await query('DELETE FROM "AllocationEntry" WHERE project_id = $1 AND phase_id = $2', [projectId, phase_id]);
 
@@ -173,7 +165,11 @@ router.put('/', async (req, res) => {
 });
 
 // GET /api/projects/:id/allocation/warnings
+// Step C: delegated to AllocationAggregator. The rule Σ FTE ≤ 1.0 lives
+// in canAllocate; this endpoint exposes the same logic in informational
+// form (warnings before an actual write).
 router.get('/warnings', async (req, res) => {
+  const projectId = (req.params as { id: string }).id;
   const { week_start, resource_id } = req.query;
 
   if (!week_start || !resource_id) {
@@ -181,21 +177,30 @@ router.get('/warnings', async (req, res) => {
   }
 
   try {
-    const allAllocs = await query(
-      `SELECT project_id, to_char(week_start, 'YYYY-MM-DD') as week_start, fte
-       FROM "AllocationEntry"
-       WHERE resource_id = $1`,
-      [resource_id]
+    // Total of OTHER projects on this (resource, week) — this is the
+    // headroom the current project can request without overflowing
+    const otherProjectsTotal = await getWeeklyTotal(
+      Number(resource_id),
+      String(week_start),
+      { excludeProjectId: Number(projectId) }
     );
+    const selfTotal = await getWeeklyTotal(
+      Number(resource_id),
+      String(week_start)
+    ) - otherProjectsTotal;
+    const total = otherProjectsTotal + selfTotal;
+    const isValid = total <= 1.0;
 
-    const fteAllocations = allAllocs.rows.map((row: any) => ({
-      projectId: row.project_id,
-      week_start: row.week_start,
-      fte: parseFloat(row.fte),
-    }));
-
-    const result = validateFTE(fteAllocations, week_start as string);
-    res.json(result);
+    res.json({
+      isValid,
+      warnings: isValid ? [] : [
+        {
+          projectId: Number(projectId),
+          week_start: String(week_start),
+          excess: parseFloat((total - 1.0).toFixed(4)),
+        },
+      ],
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal server error' });

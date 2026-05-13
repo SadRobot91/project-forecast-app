@@ -1,58 +1,15 @@
 import { Router } from 'express';
 import { query } from '../db';
+import { getRegistryAggregate } from '../services/allocationAggregator';
 
 const router = Router();
 
-// GET /api/resources/registry — deve stare prima di /:id per evitare conflitti
-router.get('/registry', async (req, res) => {
+// GET /api/resources/registry — deve stare prima di /:id per evitare conflitti.
+// Step C: delegated to AllocationAggregator service for the cross-project SUM.
+router.get('/registry', async (_req, res) => {
   try {
-    const allocRes = await query(
-      `SELECT r.id as resource_id, r.name as resource_name, r.role, r.day_rate::numeric as day_rate,
-              p.id as project_id, p.name as project_name, p.status as project_status,
-              to_char(ae.week_start, 'YYYY-MM-DD') as week_start,
-              ae.fte::numeric as fte
-       FROM "AllocationEntry" ae
-       JOIN "Resource" r ON r.id = ae.resource_id
-       JOIN "Project" p ON p.id = ae.project_id
-       ORDER BY r.name, p.name, ae.week_start`
-    );
-
-    const resourceMap = new Map<number, any>();
-    const weekSet = new Set<string>();
-
-    for (const row of allocRes.rows) {
-      weekSet.add(row.week_start);
-      if (!resourceMap.has(row.resource_id)) {
-        resourceMap.set(row.resource_id, {
-          resource: {
-            id: row.resource_id,
-            name: row.resource_name,
-            role: row.role,
-            day_rate: parseFloat(row.day_rate),
-          },
-          allocations: [],
-          totals: {},
-        });
-      }
-      const entry = resourceMap.get(row.resource_id);
-      const fte = parseFloat(row.fte);
-      entry.allocations.push({
-        project_id: row.project_id,
-        project_name: row.project_name,
-        project_status: row.project_status,
-        week_start: row.week_start,
-        fte,
-      });
-      entry.totals[row.week_start] = parseFloat(((entry.totals[row.week_start] ?? 0) + fte).toFixed(4));
-    }
-
-    const weeks = Array.from(weekSet).sort();
-    const rows = Array.from(resourceMap.values());
-    const hasOverallocation = rows.some((r) =>
-      Object.values(r.totals).some((t: any) => t > 1.0)
-    );
-
-    res.json({ weeks, rows, has_overallocation: hasOverallocation });
+    const aggregate = await getRegistryAggregate();
+    res.json(aggregate);
   } catch (err: any) {
     console.error(err);
     res.status(500).json({ error: err.message || 'Internal server error' });
@@ -104,38 +61,11 @@ router.put('/:id', async (req, res) => {
     return res.status(400).json({ error: 'day_rate must be a positive number' });
   }
   try {
-    // Step A: if the resource has allocations on any project with a locked
-    // baseline, reject changes to day_rate. weekly_cost on existing entries
-    // is materialized at INSERT time but feeds the SUM that produces the
-    // locked baseline's BAC — a day_rate change would alter the BAC
-    // indirectly once Step G (cascade or versioning) is implemented.
-    // Until then we conservatively block any PUT that would update the rate.
-    const currentRes = await query(
-      'SELECT day_rate FROM "Resource" WHERE id = $1',
-      [id]
-    );
-    if (currentRes.rowCount === 0) {
-      return res.status(404).json({ error: 'Not found' });
-    }
-    const rateChanged = parseFloat(currentRes.rows[0].day_rate) !== rate;
-
-    if (rateChanged) {
-      const lockedProjects = await query(
-        `SELECT DISTINCT p.id, p.name
-           FROM "AllocationEntry" ae
-           JOIN "Baseline" b ON b.project_id = ae.project_id
-           JOIN "Project" p ON p.id = ae.project_id
-          WHERE ae.resource_id = $1 AND b.locked_at IS NOT NULL`,
-        [id]
-      );
-      if (lockedProjects.rowCount && lockedProjects.rowCount > 0) {
-        return res.status(400).json({
-          error: 'Cannot change day_rate: resource is allocated on locked baselines.',
-          locked_projects: lockedProjects.rows,
-        });
-      }
-    }
-
+    // Step B: after lock the BAC is snapshotted on Baseline. day_rate
+    // changes affect only future weekly_cost calculations (when an
+    // allocation cell is re-saved); they do not retroactively alter the
+    // locked baseline. Step G (day_rate versioning) will track rate
+    // history for full traceability.
     const result = await query(
       'UPDATE "Resource" SET name = $1, role = $2, day_rate = $3 WHERE id = $4 RETURNING *',
       [name.trim(), role ?? '', rate, id]
