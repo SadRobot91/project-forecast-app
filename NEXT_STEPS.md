@@ -18,29 +18,78 @@ Questo documento elenca tutto ciò che va fatto prima di iniziare lo Step 10
 Vedi `ARCHITECTURE_AS_IS.md` per i dettagli completi. Qui solo il riepilogo
 operativo in ordine di esecuzione.
 
-### Step A — Lock check su PUT /allocation (1h)
+### Step A — Lock check su PUT /allocation (1h) — **STOPGAP**
+
+> ⚠️ **Step A è intenzionalmente uno stopgap di sicurezza** valido solo fino
+> al merge di Step B. Una volta che la BAC è materializzata come snapshot
+> sul record `Baseline` (Step B), il blocco hard su `PUT /allocation` va
+> **rimosso**: la working copy (AllocationEntry, ProjectPhase) torna
+> liberamente modificabile per gestire slittamenti reali (ritardi sorgente,
+> riorganizzazione risorse, dilatazione timeline). La variance si misura
+> contro lo snapshot congelato, non contro lo stato corrente.
 
 In `backend/src/routes/allocations.ts`, all'inizio del PUT, leggere
 `Baseline.locked_at` e rifiutare con 400 se valorizzato. Stessa cosa per
 `PUT /resources/:id` se la risorsa è allocata su un progetto con baseline
-lockata.
+lockata (limitato al caso di day_rate cambiato).
 
 **File toccati:** `allocations.ts`, `resources.ts`
 **Test:** scenario "lock + tentativo write API diretto deve restituire 400"
 
-### Step B — Snapshot totali nella Baseline (0.5gg)
+**Quando rimuovere Step A:** in Step B, dopo aver verificato che la BAC è
+correttamente snapshottata sul record `Baseline` e che la dashboard legge
+la variance dallo snapshot, non più dal SUM live.
+
+### Step B — Snapshot totali nella Baseline (0.5–1gg)
 
 Migration `008_baseline_snapshot.sql`:
 ```sql
 ALTER TABLE "Baseline"
-  ADD COLUMN total_budget_at_lock DECIMAL(15,2),
-  ADD COLUMN total_forecast_at_lock DECIMAL(15,2),
+  ADD COLUMN total_budget_at_lock      DECIMAL(15,2),
+  ADD COLUMN total_forecast_at_lock    DECIMAL(15,2),
   ADD COLUMN total_working_days_at_lock INTEGER,
-  ADD COLUMN phase_budgets_at_lock JSONB;
+  ADD COLUMN phase_snapshot_at_lock     JSONB;
+  -- phase_snapshot_at_lock contiene per ogni fase:
+  -- { phase_id, phase_type, display_name, order,
+  --   planned_start, planned_end, working_days, planned_hours,
+  --   budget, contingency_pct, status }
 ```
 
-In `POST /baseline/lock`, prima di settare `locked_at`, calcolare e congelare
-i totali. Da quel momento il `Baseline` salvato è la BAC immutabile.
+In `POST /baseline/lock`, dentro la stessa transazione, prima di settare
+`locked_at`:
+1. Leggere fasi correnti da `ProjectPhase`
+2. Calcolare `SUM(weekly_cost)` per fase da `AllocationEntry`
+3. Costruire il JSONB con dati per fase + totali
+4. INSERT/UPSERT su `Baseline` con tutti i campi snapshot
+
+Da quel momento il `Baseline` salvato è la **BAC immutabile**. Working copy
+(`ProjectPhase`, `AllocationEntry`) resta mutabile.
+
+**Lato GET `/baseline`:**
+- Se `is_locked`: ritornare i campi `*_at_lock` (snapshot)
+- Se non lockata: ritornare il calcolo live attuale
+- Frontend non si accorge della differenza, vede sempre `{ phases, totals }`
+
+**Lato dashboard:**
+- `kpis.budget_total` → da snapshot quando locked, da SUM live altrimenti
+- `kpis.variance` → `current_forecast − total_budget_at_lock`
+- I numeri "originale" e "corrente" diventano confrontabili
+
+**Conseguenze sui blocchi di Step A:**
+Una volta che la BAC è nello snapshot, modificare `AllocationEntry` o
+`day_rate` non altera più la BAC. Quindi in questa stessa PR si **rimuove**
+il blocco di Step A su:
+- `PUT /allocation` — torna libero
+- `PUT /resources/:id day_rate` — torna libero
+
+Resta lockato solo `PUT /baseline` (i parametri di progetto: contingency,
+display_name fase) perché quelli SONO la BAC.
+
+**Aperto come follow-up (non bloccante per chiudere step 9):**
+- Modificare le date di una fase dopo il lock (caso "ritardo sorgente,
+  dilatare timeline"): oggi `PUT /baseline` aggiorna dates+contingency
+  nello stesso payload, va splittato in `PATCH /phases/:id` (dates only,
+  permesso anche dopo lock) e `PUT /baseline` (parametri BAC, locked).
 
 ### Step C — Service-layer aggregator (~3–4h)
 
@@ -97,6 +146,50 @@ Quick fix: trigger cascade su `PUT /resources/:id` che ricalcola
 
 Vedi punto ⑥ in `ARCHITECTURE_AS_IS.md`. Workstream separato, può andare in
 parallelo agli altri da B in poi.
+
+### Step I — Date di fase mutabili dopo lock (~1gg, dopo B)
+
+Quando la sorgente dati slitta o un dipendency cambia tempistiche, il PM
+deve poter dilatare la timeline della working copy senza che questo tocchi
+la BAC. Oggi `PUT /baseline` aggrega in un solo payload sia parametri BAC
+(contingency, display_name) sia dati working copy (planned_start,
+planned_end) — e dopo Step B è ancora rifiutato in toto sulle baseline
+lockate.
+
+Soluzione: splittare l'endpoint.
+- `PUT /api/projects/:id/baseline` → solo parametri BAC, rifiuta se lockata (come oggi)
+- `PATCH /api/projects/:id/phases/:phase_id` → solo `planned_start`,
+  `planned_end`, `status`; permesso anche dopo il lock perché modifica
+  working copy, non BAC.
+
+Frontend: in Pianificazione tab Fasi, dopo il lock, gli input date restano
+editabili (con etichetta "Working copy — la BAC originale è del DD/MM/YY").
+Contingency e display_name diventano read-only.
+
+### Step J — Re-baselining (scope change formale, future feature)
+
+Quando lo sponsor approva un cambio di scope significativo (es. £30k di
+lavoro aggiuntivo), la BAC stessa deve cambiare ma con audit trail. Caso
+standard PM (PRINCE2 "exception plan", PMBOK "change request approved").
+
+Schema proposto:
+```sql
+ALTER TABLE "Baseline" ADD COLUMN version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE "Baseline" ADD COLUMN effective_from DATE;
+ALTER TABLE "Baseline" ADD COLUMN reason TEXT;
+-- più righe per project_id, una per versione approvata
+-- PRIMARY KEY (project_id, version)
+```
+
+Workflow:
+- PM clicca "Richiedi re-baseline" → modal con motivo + delta
+- Sponsor approva (qui serve almeno l'auth di Step H)
+- Nuovo record `Baseline v2` con nuovo snapshot
+- Dashboard ha selettore "Variance vs Baseline v1 / v2 / current"
+- Variance pre-cambio scope misurata vs v1, post-cambio vs v2
+
+Fuori dai bloccanti del POC. Da affrontare quando l'auth è pronta e
+c'è un caso reale.
 
 ---
 
@@ -335,12 +428,14 @@ reali del progetto PChallenges) i seguenti devono essere fatti:
 **Fortemente consigliati prima del seeding** (ridurranno il rework):
 - [ ] Step E — phase_id su OngoingSnapshot
 - [ ] Step F — Phase Financial Engine
+- [ ] Step I — Date fase mutabili dopo lock (richiesto da casistiche reali)
 - [ ] 3.1 — Dashboard KPI cards a 4
 - [ ] 3.4 — Avanzamento dedup entry point
 
 **Possono aspettare uno step dedicato:**
 - [ ] Step G — day_rate versioning (può fare cascade tattico per ora)
 - [ ] Step H — Auth backend (workstream parallelo)
+- [ ] Step J — Re-baselining con versioning (post-auth)
 - [ ] 3.2, 3.3, 3.5 — Settings, nav, label projects
 
 ---
