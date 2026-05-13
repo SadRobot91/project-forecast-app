@@ -150,7 +150,7 @@ describe('PUT /api/projects/:id/allocation', () => {
 
   it('saves with week_start (not month) in INSERT', async () => {
     mockQuery.mockResolvedValue(dbOk([])); // BEGIN, DELETE, COMMIT
-    // phase query for working days
+    mockQuery.mockResolvedValueOnce(dbOk([{ locked_at: null }])); // baseline lock check
     mockQuery.mockResolvedValueOnce(dbOk([])); // BEGIN
     mockQuery.mockResolvedValueOnce(dbOk([])); // DELETE
     mockQuery.mockResolvedValueOnce(dbOk([{ planned_start: new Date('2026-03-02'), planned_end: new Date('2026-06-19') }])); // phase
@@ -170,6 +170,28 @@ describe('PUT /api/projects/:id/allocation', () => {
     expect(insertCall![0]).toContain('weekly_cost');
     expect(insertCall![0]).not.toContain('monthly_cost');
     expect(insertCall![0]).not.toContain('"month"');
+  });
+
+  // Step A: PUT must reject when baseline is locked
+  it('rejects with 400 when baseline is locked', async () => {
+    const lockedAt = '2026-02-01T10:00:00Z';
+    mockQuery.mockResolvedValueOnce(dbOk([{ locked_at: lockedAt }]));
+
+    const res = await request(app)
+      .put('/api/projects/1/allocation')
+      .send({ phase_id: 1, allocations: [{ resource_id: 2, week_start: '2026-03-02', fte: 0.8 }] });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/locked/i);
+    expect(res.body.locked_at).toBe(lockedAt);
+
+    // Must NOT have started a transaction nor touched AllocationEntry
+    const beganTx = mockQuery.mock.calls.some((c: any[]) => c[0] === 'BEGIN');
+    const touchedAlloc = mockQuery.mock.calls.some((c: any[]) =>
+      typeof c[0] === 'string' && c[0].includes('AllocationEntry') && !c[0].includes('Baseline')
+    );
+    expect(beganTx).toBe(false);
+    expect(touchedAlloc).toBe(false);
   });
 });
 
@@ -198,6 +220,59 @@ describe('GET /api/resources/registry', () => {
     expect(res.body.rows[0].allocations[0]).toHaveProperty('week_start', '2026-03-02');
     expect(res.body.rows[0].allocations[0]).toHaveProperty('project_status', 'active');
     expect(res.body.rows[0].allocations[0]).not.toHaveProperty('month');
+  });
+
+  // Step A coverage for the resource side
+  describe('PUT /api/resources/:id (lock guard)', () => {
+    it('rejects day_rate change when resource is on a locked baseline', async () => {
+      mockQuery.mockResolvedValueOnce(dbOk([{ day_rate: '600' }])); // current rate
+      mockQuery.mockResolvedValueOnce(dbOk([                          // locked projects join
+        { id: 1, name: 'RXI Platform' },
+      ]));
+
+      const res = await request(app)
+        .put('/api/resources/2')
+        .send({ name: 'Vishal', role: 'Dev', day_rate: 700 });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/day_rate.*locked/i);
+      expect(res.body.locked_projects).toEqual([{ id: 1, name: 'RXI Platform' }]);
+
+      // UPDATE must NOT have been executed
+      const updateCall = mockQuery.mock.calls.find((c: any[]) =>
+        typeof c[0] === 'string' && c[0].includes('UPDATE "Resource"')
+      );
+      expect(updateCall).toBeUndefined();
+    });
+
+    it('allows update when day_rate is unchanged even with locked allocation', async () => {
+      mockQuery.mockResolvedValueOnce(dbOk([{ day_rate: '600' }])); // current rate, same as new
+      mockQuery.mockResolvedValueOnce(dbOk([{ id: 2, name: 'Vishal', role: 'Senior Dev', day_rate: '600' }])); // UPDATE RETURNING
+
+      const res = await request(app)
+        .put('/api/resources/2')
+        .send({ name: 'Vishal', role: 'Senior Dev', day_rate: 600 });
+
+      expect(res.status).toBe(200);
+      // No lock check should have been issued because rate did not change
+      const lockCheckCall = mockQuery.mock.calls.find((c: any[]) =>
+        typeof c[0] === 'string' && c[0].includes('locked_at IS NOT NULL')
+      );
+      expect(lockCheckCall).toBeUndefined();
+    });
+
+    it('allows day_rate change when no allocation is on a locked baseline', async () => {
+      mockQuery.mockResolvedValueOnce(dbOk([{ day_rate: '600' }])); // current rate
+      mockQuery.mockResolvedValueOnce(dbOk([], 0));                  // no locked projects
+      mockQuery.mockResolvedValueOnce(dbOk([{ id: 2, name: 'Vishal', role: 'Dev', day_rate: '700' }])); // UPDATE RETURNING
+
+      const res = await request(app)
+        .put('/api/resources/2')
+        .send({ name: 'Vishal', role: 'Dev', day_rate: 700 });
+
+      expect(res.status).toBe(200);
+      expect(parseFloat(res.body.day_rate)).toBe(700);
+    });
   });
 
   it('detects overallocation across projects', async () => {

@@ -127,6 +127,19 @@ router.put('/', async (req, res) => {
   const { phase_id, allocations } = req.body;
 
   try {
+    // Step A: reject if baseline is locked. weekly_cost feeds phase budget,
+    // so modifying allocations after lock would retroactively alter the BAC.
+    const lockCheck = await query(
+      'SELECT locked_at FROM "Baseline" WHERE project_id = $1',
+      [projectId]
+    );
+    if (lockCheck.rows[0]?.locked_at) {
+      return res.status(400).json({
+        error: 'Baseline is locked. Cannot modify allocations.',
+        locked_at: lockCheck.rows[0].locked_at,
+      });
+    }
+
     await query('BEGIN');
     await query('DELETE FROM "AllocationEntry" WHERE project_id = $1 AND phase_id = $2', [projectId, phase_id]);
 
