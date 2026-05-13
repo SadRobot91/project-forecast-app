@@ -4,11 +4,10 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Projects from './pages/Projects';
 import Dashboard from './pages/Dashboard';
-import Baseline from './pages/Baseline';
-import Allocation from './pages/Allocation';
+import Pianificazione from './pages/Pianificazione';
 import Resources from './pages/Resources';
 import Gantt from './pages/Gantt';
-import Ongoing from './pages/Ongoing';
+import Avanzamento from './pages/Avanzamento';
 import Settings from './pages/Settings';
 
 export default function App() {
@@ -34,18 +33,10 @@ export default function App() {
             }
           />
           <Route
-            path="/projects/:id/baseline"
+            path="/projects/:id/pianificazione"
             element={
               <ProtectedRoute>
-                <Baseline />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/projects/:id/allocation"
-            element={
-              <ProtectedRoute>
-                <Allocation />
+                <Pianificazione />
               </ProtectedRoute>
             }
           />
@@ -58,13 +49,17 @@ export default function App() {
             }
           />
           <Route
-            path="/projects/:id/ongoing"
+            path="/projects/:id/avanzamento"
             element={
               <ProtectedRoute>
-                <Ongoing />
+                <Avanzamento />
               </ProtectedRoute>
             }
           />
+          {/* Legacy redirects */}
+          <Route path="/projects/:id/baseline"   element={<Navigate to="../pianificazione" replace />} />
+          <Route path="/projects/:id/allocation"  element={<Navigate to="../pianificazione" replace />} />
+          <Route path="/projects/:id/ongoing"     element={<Navigate to="../avanzamento" replace />} />
           <Route
             path="/resources"
             element={
