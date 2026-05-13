@@ -20,8 +20,9 @@ export default function Settings() {
   const [editingContingency, setEditingContingency] = useState('');
 
   // new phase form
-  const [newName, setNewName]     = useState('');
-  const [adding, setAdding]       = useState(false);
+  const [newName, setNewName]           = useState('');
+  const [newContingency, setNewContingency] = useState('0');
+  const [adding, setAdding]             = useState(false);
 
   // delete confirm
   const [deleteTarget, setDeleteTarget] = useState<PhaseTemplate | null>(null);
@@ -87,11 +88,13 @@ export default function Settings() {
     setAdding(true);
     try {
       const maxOrder = templates.reduce((m, t) => Math.max(m, t.order), 0);
-      const created  = await createPhaseTemplate(name, maxOrder + 1);
+      const pct      = parseFloat(newContingency) || 0;
+      const created  = await createPhaseTemplate(name, maxOrder + 1, pct);
       setTemplates((prev) => [...prev, created].sort((a, b) => a.order - b.order));
       setNewName('');
-    } catch {
-      setError('Errore durante la creazione.');
+      setNewContingency('0');
+    } catch (e: any) {
+      setError(e?.message ?? 'Errore durante la creazione.');
     } finally {
       setAdding(false);
     }
@@ -235,15 +238,25 @@ export default function Settings() {
           </table>
 
           {/* Add new phase */}
-          <div className="px-5 py-4 border-t border-border flex items-center gap-3">
+          <div className="px-5 py-4 border-t border-border flex items-center gap-3 flex-wrap">
             <input
               type="text"
               placeholder="Nome nuova fase…"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); }}
-              className="flex-1 bg-base border border-border text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
+              className="flex-1 min-w-40 bg-base border border-border text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
             />
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min={0} max={100}
+                placeholder="Cont. %"
+                value={newContingency}
+                onChange={(e) => setNewContingency(e.target.value)}
+                className="w-24 bg-base border border-border text-text-primary rounded-lg px-3 py-2 text-sm text-center focus:outline-none focus:border-accent"
+              />
+              <span className="text-text-dim text-xs">%</span>
+            </div>
             <button
               onClick={handleAdd}
               disabled={adding || !newName.trim()}

@@ -293,7 +293,7 @@ function WeekGrid({ weeks, totalWidth, projectStart }: { weeks: string[]; totalW
       {weeks.map((w, i) => (
         <div key={w} className="absolute top-0 bottom-0 border-r border-border/20" style={{ left: i * WEEK_PX, width: WEEK_PX }} />
       ))}
-      {todayPx >= 0 && todayPx <= totalWidth && (
+      {TODAY >= projectStart && todayPx <= totalWidth && (
         <div className="absolute top-0 bottom-0 w-px bg-accent/60 z-10" style={{ left: todayPx }} />
       )}
     </>
@@ -684,7 +684,7 @@ export default function Gantt() {
                       </span>
                     </div>
                   ))}
-                  {toPx(project_start, TODAY) <= totalWidth && (
+                  {TODAY >= project_start && toPx(project_start, TODAY) <= totalWidth && (
                     <div className="absolute top-0 bottom-0 w-px bg-accent/60" style={{ left: toPx(project_start, TODAY) }} />
                   )}
                 </div>
