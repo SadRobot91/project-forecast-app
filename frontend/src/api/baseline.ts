@@ -16,7 +16,7 @@ export async function fetchBaseline(projectId: string): Promise<BaselineData> {
 
 export async function saveBaseline(
   projectId: string,
-  phases: { phase_id: number; planned_start: string; planned_end: string; contingency_pct?: number }[]
+  phases: { phase_id: number; planned_start: string; planned_end: string; contingency_pct?: number; display_name?: string }[]
 ): Promise<BaselineData> {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 500));

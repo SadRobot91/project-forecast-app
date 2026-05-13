@@ -20,17 +20,17 @@ function fmtDateTime(iso: string) {
   });
 }
 
-const today = new Date().toISOString().slice(0, 10);
-
 const HOURS_PER_DAY = 8;
 
-const EMPTY_FORM = {
-  reporting_date:        today,
-  cost_spent_to_date:    '',
-  hours_spent_to_date:   '',
-  working_days_used:     '',
-  working_days_remaining: '',
-};
+function getEmptyForm() {
+  return {
+    reporting_date:         new Date().toISOString().slice(0, 10),
+    cost_spent_to_date:     '',
+    hours_spent_to_date:    '',
+    working_days_used:      '',
+    working_days_remaining: '',
+  };
+}
 
 const DELETE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -54,7 +54,7 @@ export default function Ongoing() {
   const [data, setData]       = useState<OngoingData | null>(null);
   const [history, setHistory] = useState<OngoingSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm]       = useState(EMPTY_FORM);
+  const [form, setForm]       = useState(getEmptyForm);
   const [saving, setSaving]         = useState(false);
   const [saved, setSaved]           = useState(false);
   const [syncing, setSyncing]       = useState(false);
@@ -73,10 +73,10 @@ export default function Ongoing() {
       setHistory(h);
       if (d.snapshot) {
         setForm({
-          reporting_date:        today,
-          cost_spent_to_date:    String(d.snapshot.cost_spent_to_date),
-          hours_spent_to_date:   String(d.snapshot.hours_spent_to_date),
-          working_days_used:     String(d.snapshot.working_days_used),
+          reporting_date:         new Date().toISOString().slice(0, 10),
+          cost_spent_to_date:     String(d.snapshot.cost_spent_to_date),
+          hours_spent_to_date:    String(d.snapshot.hours_spent_to_date),
+          working_days_used:      String(d.snapshot.working_days_used),
           working_days_remaining: String(d.snapshot.working_days_remaining),
         });
       }

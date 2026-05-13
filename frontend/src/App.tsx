@@ -9,6 +9,7 @@ import Allocation from './pages/Allocation';
 import Resources from './pages/Resources';
 import Gantt from './pages/Gantt';
 import Ongoing from './pages/Ongoing';
+import Settings from './pages/Settings';
 
 export default function App() {
   return (
@@ -69,6 +70,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <Resources />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <Settings />
               </ProtectedRoute>
             }
           />

@@ -7,14 +7,6 @@ import RAGBadge from '../components/RAGBadge';
 import BudgetBar from '../components/BudgetBar';
 import AppNav from '../components/AppNav';
 
-const PHASE_LABEL: Record<string, string> = {
-  feasibility:     'Feasibility',
-  planning_design: 'Planning & Design',
-  build:           'Build',
-  deployment:      'Deployment',
-  closure:         'Closure',
-};
-
 const STATUS_CYCLE: ProjectStatus[] = ['active', 'on_hold', 'closed'];
 const STATUS_LABEL: Record<ProjectStatus, string> = {
   active:   'Attivo',
@@ -113,7 +105,7 @@ export default function Projects() {
                         {p.name}
                       </h2>
                       <p className="text-text-dim text-xs mt-0.5">
-                        Fase: <span className="text-text-muted">{p.current_phase ? PHASE_LABEL[p.current_phase] : '—'}</span>
+                        Fase: <span className="text-text-muted">{p.current_phase_display_name ?? p.current_phase ?? '—'}</span>
                       </p>
                     </div>
                     <RAGBadge status={p.rag_status} />

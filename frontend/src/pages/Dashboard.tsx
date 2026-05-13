@@ -1,18 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { fetchDashboard } from '../api/projects';
 import type { DashboardData, PhaseBudgetRow, MilestoneItem } from '../types';
 import RAGBadge from '../components/RAGBadge';
 import BudgetBar from '../components/BudgetBar';
 import AppNav from '../components/AppNav';
-
-const PHASE_LABEL: Record<string, string> = {
-  feasibility: 'Feasibility',
-  planning_design: 'Planning & Design',
-  build: 'Build',
-  deployment: 'Deployment',
-  closure: 'Closure',
-};
 
 function fmt(n: number) {
   return `£${n.toLocaleString('en-GB', { maximumFractionDigits: 0 })}`;
@@ -50,7 +42,7 @@ function PhaseBudgetTable({ rows, total }: { rows: PhaseBudgetRow[]; total: numb
         <tbody>
           {rows.map((r, i) => (
             <tr key={r.phase_id} className={`border-b border-border/50 hover:bg-surface-2/60 transition-colors ${i % 2 === 0 ? 'bg-surface' : 'bg-surface/50'}`}>
-              <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">{PHASE_LABEL[r.phase_type]}</td>
+              <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">{r.display_name ?? r.phase_type}</td>
               <td className="px-4 py-3 text-text-muted whitespace-nowrap text-xs">
                 {fmtDate(r.planned_start)} → {fmtDate(r.planned_end)}
               </td>
@@ -121,6 +113,7 @@ function MilestoneTracker({ milestones }: { milestones: MilestoneItem[] }) {
 
 export default function Dashboard() {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -207,12 +200,20 @@ export default function Dashboard() {
           </div>
 
           <div className="space-y-3">
-            <h2 className="font-semibold text-base">Ultimo Aggiornamento Ongoing</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="font-semibold text-base">Ultimo Aggiornamento Ongoing</h2>
+              <button
+                onClick={() => navigate(`/projects/${id}/ongoing`)}
+                className="text-xs text-accent hover:text-accent/80 border border-accent/30 rounded-lg px-3 py-1.5 hover:bg-accent/10 transition-colors"
+              >
+                Inserimento Manuale
+              </button>
+            </div>
             <div className="bg-surface border border-border rounded-2xl p-5 shadow-card space-y-3">
               <div className="flex items-center gap-2">
                 <div className={`w-2 h-2 rounded-full ${kpis.last_sync_at ? 'bg-rag-green' : 'bg-text-dim'}`} />
                 <span className="text-sm font-medium text-text-primary">
-                  {kpis.last_sync_source === 'keyedin_api' ? 'Keyedin API' : 'Inserimento Manuale'}
+                  {kpis.last_sync_source === 'keyedin_api' ? 'Keyedin API' : kpis.last_sync_at ? 'Inserimento Manuale' : 'Nessun dato'}
                 </span>
               </div>
               {kpis.last_sync_at ? (
@@ -228,7 +229,9 @@ export default function Dashboard() {
               <div className="pt-1 border-t border-border space-y-1 text-xs text-text-muted">
                 <div className="flex justify-between">
                   <span>Ore spese</span>
-                  <span className="text-text-primary font-medium">—</span>
+                  <span className="text-text-primary font-medium">
+                    {kpis.hours_spent_to_date > 0 ? `${kpis.hours_spent_to_date}h` : '—'}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span>Costo speso</span>
@@ -236,7 +239,9 @@ export default function Dashboard() {
                 </div>
                 <div className="flex justify-between">
                   <span>Giorni usati</span>
-                  <span className="text-text-primary font-medium">—</span>
+                  <span className="text-text-primary font-medium">
+                    {kpis.working_days_used > 0 ? kpis.working_days_used : '—'}
+                  </span>
                 </div>
               </div>
             </div>

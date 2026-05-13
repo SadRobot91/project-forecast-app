@@ -19,13 +19,12 @@ router.get('/', async (req, res) => {
 
     const baselineRes = await query('SELECT * FROM "Baseline" WHERE project_id = $1', [projectId]);
     const baseline = baselineRes.rows[0] ?? null;
-    const contingencyPct = parseFloat(baseline?.contingency_pct ?? 0);
     const isLocked = !!baseline?.locked_at;
 
     const phasesRes = await query(
-      `SELECT pp.id as phase_id, pp.phase_type, pp."order",
+      `SELECT pp.id as phase_id, pp.phase_type, pp.display_name, pp."order",
               pp.planned_start, pp.planned_end,
-              pp.working_days, pp.planned_hours, pp.status,
+              pp.working_days, pp.planned_hours, pp.status, pp.contingency_pct,
               COALESCE(SUM(ae.weekly_cost), 0)::numeric as budget
        FROM "ProjectPhase" pp
        LEFT JOIN "AllocationEntry" ae ON ae.phase_id = pp.id
@@ -36,30 +35,32 @@ router.get('/', async (req, res) => {
     );
 
     const phases = phasesRes.rows.map((p: any) => ({
-      phase_id: p.phase_id,
-      phase_type: p.phase_type,
-      order: p.order,
-      planned_start: isoDate(p.planned_start),
-      planned_end: isoDate(p.planned_end),
-      working_days: p.working_days ?? 0,
-      planned_hours: p.planned_hours ?? 0,
-      budget: parseFloat(p.budget),
-      contingency_pct: p.phase_type === 'feasibility' ? contingencyPct : 0,
-      status: p.status ?? 'not_started',
-      is_locked: isLocked,
+      phase_id:        p.phase_id,
+      phase_type:      p.phase_type,
+      display_name:    p.display_name,
+      order:           p.order,
+      planned_start:   isoDate(p.planned_start),
+      planned_end:     isoDate(p.planned_end),
+      working_days:    p.working_days ?? 0,
+      planned_hours:   p.planned_hours ?? 0,
+      budget:          parseFloat(p.budget),
+      contingency_pct: parseFloat(p.contingency_pct ?? 0),
+      status:          p.status ?? 'not_started',
+      is_locked:       isLocked,
     }));
 
-    const totalBudget = phases.reduce((s: number, p: any) => s + p.budget, 0);
-    const feasibilityBudget = phases.find((p: any) => p.phase_type === 'feasibility')?.budget ?? 0;
-    const totalForecast = totalBudget + feasibilityBudget * (contingencyPct / 100);
+    const totalBudget   = phases.reduce((s, p) => s + p.budget, 0);
+    const totalForecast = phases.reduce(
+      (s, p) => s + p.budget + p.budget * (p.contingency_pct / 100),
+      0,
+    );
 
     res.json({
-      project_id: parseInt(projectId, 10),
+      project_id:   parseInt(projectId, 10),
       project_name: projectName,
       phases,
-      is_locked: isLocked,
-      locked_at: baseline?.locked_at ?? null,
-      contingency_pct: contingencyPct,
+      is_locked:    isLocked,
+      locked_at:    baseline?.locked_at ?? null,
       total_budget: totalBudget,
       total_forecast: totalForecast,
     });
@@ -73,7 +74,13 @@ router.get('/', async (req, res) => {
 router.put('/', async (req, res) => {
   const { id: projectId } = req.params as { id: string };
   const { phases } = req.body as {
-    phases: { phase_id: number; planned_start: string; planned_end: string; contingency_pct?: number }[];
+    phases: {
+      phase_id: number;
+      planned_start: string;
+      planned_end: string;
+      contingency_pct?: number;
+      display_name?: string;
+    }[];
   };
 
   if (!Array.isArray(phases) || phases.length === 0) {
@@ -100,33 +107,39 @@ router.put('/', async (req, res) => {
     const holidaysRes = await query(`SELECT date FROM "PublicHoliday" WHERE country_code = 'IT'`);
     const holidays = holidaysRes.rows.map((h: any) => new Date(h.date));
 
-    let contingencyPct = 0;
-
     await query('BEGIN');
 
     for (const p of phases) {
-      if (p.contingency_pct !== undefined && p.contingency_pct > 0) {
-        contingencyPct = p.contingency_pct;
-      }
-
       const wd =
         p.planned_start && p.planned_end
           ? calculateNetworkDays(new Date(p.planned_start), new Date(p.planned_end), holidays)
           : 0;
 
-      await query(
-        `UPDATE "ProjectPhase"
-         SET planned_start = $1, planned_end = $2, working_days = $3, planned_hours = $4
-         WHERE id = $5`,
-        [p.planned_start || null, p.planned_end || null, wd, wd * 8, p.phase_id]
-      );
+      const contingencyPct = p.contingency_pct !== undefined ? p.contingency_pct : 0;
+
+      if (p.display_name !== undefined && p.display_name.trim() !== '') {
+        await query(
+          `UPDATE "ProjectPhase"
+           SET planned_start = $1, planned_end = $2, working_days = $3,
+               planned_hours = $4, contingency_pct = $5, display_name = $6
+           WHERE id = $7`,
+          [p.planned_start || null, p.planned_end || null, wd, wd * 8, contingencyPct, p.display_name.trim(), p.phase_id],
+        );
+      } else {
+        await query(
+          `UPDATE "ProjectPhase"
+           SET planned_start = $1, planned_end = $2, working_days = $3,
+               planned_hours = $4, contingency_pct = $5
+           WHERE id = $6`,
+          [p.planned_start || null, p.planned_end || null, wd, wd * 8, contingencyPct, p.phase_id],
+        );
+      }
     }
 
     await query(
-      `INSERT INTO "Baseline" (project_id, contingency_pct)
-       VALUES ($1, $2)
-       ON CONFLICT (project_id) DO UPDATE SET contingency_pct = EXCLUDED.contingency_pct`,
-      [projectId, contingencyPct]
+      `INSERT INTO "Baseline" (project_id) VALUES ($1)
+       ON CONFLICT (project_id) DO NOTHING`,
+      [projectId],
     );
 
     await query('COMMIT');
@@ -142,7 +155,6 @@ router.put('/', async (req, res) => {
 router.post('/lock', async (req, res) => {
   const { id: projectId } = req.params as { id: string };
   try {
-    // If already locked, return existing timestamp
     const existing = await query('SELECT locked_at FROM "Baseline" WHERE project_id = $1', [projectId]);
     if (existing.rows[0]?.locked_at) {
       return res.json({ locked_at: existing.rows[0].locked_at });
@@ -152,7 +164,7 @@ router.post('/lock', async (req, res) => {
       `INSERT INTO "Baseline" (project_id, locked_at)
        VALUES ($1, NOW())
        ON CONFLICT (project_id) DO UPDATE SET locked_at = NOW()`,
-      [projectId]
+      [projectId],
     );
 
     const result = await query('SELECT locked_at FROM "Baseline" WHERE project_id = $1', [projectId]);

@@ -33,14 +33,14 @@ router.get('/', async (req, res) => {
     if (!projRes.rowCount) return res.status(404).json({ error: 'Project not found' });
 
     const phasesRes = await query(
-      `SELECT id as phase_id, phase_type, planned_start, planned_end, status
+      `SELECT id as phase_id, phase_type, display_name, planned_start, planned_end, status
        FROM "ProjectPhase" WHERE project_id = $1 ORDER BY "order"`,
       [projectId]
     );
 
     const tasksRes = await query(
       `SELECT id, project_id, phase_id, name, owner,
-              start_date, end_date, working_days, is_milestone, actual_date
+              start_date, end_date, working_days, is_milestone, actual_date, status
        FROM "GanttTask" WHERE project_id = $1 ORDER BY phase_id, start_date`,
       [projectId]
     );
@@ -60,11 +60,12 @@ router.get('/', async (req, res) => {
           working_days: t.working_days,
           is_milestone: t.is_milestone,
           actual_date:  t.actual_date ? isoDate(t.actual_date) : null,
-          status:       computeStatus(t.start_date, t.end_date, t.actual_date),
+          status:       t.status ?? 'not_started',
         }));
       return {
         phase_id:      ph.phase_id,
         phase_type:    ph.phase_type,
+        display_name:  ph.display_name,
         planned_start: isoDate(ph.planned_start),
         planned_end:   isoDate(ph.planned_end),
         status:        ph.status ?? 'not_started',

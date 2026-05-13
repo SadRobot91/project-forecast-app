@@ -447,18 +447,18 @@ describe('GET /api/projects/:id/baseline', () => {
 
   it('returns baseline with weekly_cost-based budget (not monthly)', async () => {
     mockQuery.mockResolvedValueOnce(dbOk([{ name: 'RXI Platform' }]));       // project
-    mockQuery.mockResolvedValueOnce(dbOk([{ contingency_pct: '10', locked_at: null }])); // baseline row
-    mockQuery.mockResolvedValueOnce(dbOk([                                    // phases with SUM(weekly_cost)
-      { phase_id: 1, phase_type: 'feasibility', order: 1,
+    mockQuery.mockResolvedValueOnce(dbOk([{ locked_at: null }]));              // baseline row
+    mockQuery.mockResolvedValueOnce(dbOk([                                     // phases with SUM(weekly_cost)
+      { phase_id: 1, phase_type: 'feasibility', display_name: 'Feasibility', order: 1,
         planned_start: new Date('2026-01-05'), planned_end: new Date('2026-01-20'),
-        working_days: 12, planned_hours: 96, status: 'completed', budget: '4080' },
+        working_days: 12, planned_hours: 96, status: 'completed', budget: '4080', contingency_pct: '10' },
     ]));
 
     const res = await request(app).get('/api/projects/1/baseline');
     expect(res.status).toBe(200);
     expect(res.body.phases[0].budget).toBe(4080);
     expect(res.body.is_locked).toBe(false);
-    expect(res.body.contingency_pct).toBe(10);
+    expect(res.body.phases[0].contingency_pct).toBe(10);
 
     // The SQL must reference weekly_cost, not monthly_cost
     const phaseQuery: string = mockQuery.mock.calls[2][0];

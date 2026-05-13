@@ -10,6 +10,7 @@ router.get('/', async (req, res) => {
     const result = await query(
       `SELECT p.id, p.name, p.status, p.currency,
               ph.phase_type as current_phase,
+              ph.display_name as current_phase_display_name,
               COALESCE((
                 SELECT SUM(ae.weekly_cost)
                 FROM "AllocationEntry" ae
@@ -22,6 +23,20 @@ router.get('/', async (req, res) => {
                 ORDER BY os.reporting_date DESC, os.created_at DESC
                 LIMIT 1
               ), 0)::numeric as budget_spent,
+              COALESCE((
+                SELECT os2.hours_spent_to_date
+                FROM "OngoingSnapshot" os2
+                WHERE os2.project_id = p.id
+                ORDER BY os2.reporting_date DESC, os2.created_at DESC
+                LIMIT 1
+              ), 0)::numeric as hours_spent,
+              COALESCE((
+                SELECT os3.working_days_remaining
+                FROM "OngoingSnapshot" os3
+                WHERE os3.project_id = p.id
+                ORDER BY os3.reporting_date DESC, os3.created_at DESC
+                LIMIT 1
+              ), NULL) as working_days_remaining_snapshot,
               (
                 SELECT MAX(pp2.planned_end)
                 FROM "ProjectPhase" pp2
@@ -31,10 +46,15 @@ router.get('/', async (req, res) => {
                 SELECT SUM(pp3.working_days)
                 FROM "ProjectPhase" pp3
                 WHERE pp3.project_id = p.id
-              ), 0)::integer as working_days_total
+              ), 0)::integer as working_days_total,
+              COALESCE((
+                SELECT SUM(pp4.planned_hours)
+                FROM "ProjectPhase" pp4
+                WHERE pp4.project_id = p.id
+              ), 0)::integer as planned_hours_total
        FROM "Project" p
        LEFT JOIN "ProjectPhase" ph ON ph.project_id = p.id AND ph.status = 'in_progress'
-       GROUP BY p.id, p.name, p.status, p.currency, ph.phase_type
+       GROUP BY p.id, p.name, p.status, p.currency, ph.phase_type, ph.display_name
        ORDER BY p.id`
     );
 
@@ -42,12 +62,15 @@ router.get('/', async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     const projects = result.rows.map((r: any) => {
-      const total  = parseFloat(r.budget_total) || 0;
-      const spent  = parseFloat(r.budget_spent) || 0;
-      const budgetPct = total > 0 ? Math.round((spent / total) * 100) : 0;
+      const total       = parseFloat(r.budget_total) || 0;
+      const spent       = parseFloat(r.budget_spent) || 0;
+      const hoursSpent  = parseFloat(r.hours_spent) || 0;
+      const budgetPct   = total > 0 ? Math.round((spent / total) * 100) : 0;
 
-      let daysRemaining = 0;
-      if (r.project_end) {
+      let daysRemaining = r.working_days_remaining_snapshot != null
+        ? parseInt(r.working_days_remaining_snapshot, 10)
+        : 0;
+      if (r.working_days_remaining_snapshot == null && r.project_end) {
         const end = new Date(r.project_end);
         end.setHours(0, 0, 0, 0);
         if (end >= today) {
@@ -60,10 +83,13 @@ router.get('/', async (req, res) => {
         }
       }
 
-      const wdTotal = parseInt(r.working_days_total, 10) || 0;
-      const dailyBurnRate = wdTotal > 0 ? total / wdTotal : 0;
-      const revisedForecast = calculateRevisedForecast(0, spent, dailyBurnRate, daysRemaining, 0, 0);
-      const ragStatus = calculateRAGStatus(revisedForecast, total);
+      const wdTotal         = parseInt(r.working_days_total, 10) || 0;
+      const plannedHours    = parseInt(r.planned_hours_total, 10) || wdTotal * 8;
+      const hoursRemaining  = Math.max(0, plannedHours - hoursSpent);
+      const dailyBurnRate   = wdTotal > 0 ? total / wdTotal : 0;
+      const avgCostPerHour  = hoursSpent > 0 && spent > 0 ? spent / hoursSpent : 0;
+      const revisedForecast = calculateRevisedForecast(hoursSpent, spent, dailyBurnRate, daysRemaining, avgCostPerHour, hoursRemaining);
+      const ragStatus       = calculateRAGStatus(revisedForecast, total);
 
       return {
         id: r.id,
@@ -71,6 +97,7 @@ router.get('/', async (req, res) => {
         status: r.status,
         rag_status: ragStatus,
         current_phase: r.current_phase ?? null,
+        current_phase_display_name: r.current_phase_display_name ?? null,
         budget_total: total,
         budget_spent: spent,
         budget_pct: budgetPct,

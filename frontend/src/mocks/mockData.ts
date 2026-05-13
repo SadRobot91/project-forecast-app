@@ -28,6 +28,7 @@ export const MOCK_PROJECTS: ProjectSummary[] = [
     status: 'active',
     rag_status: 'A_RISCHIO',
     current_phase: 'build',
+    current_phase_display_name: 'Build',
     budget_total: 64600,
     budget_spent: 36200,
     budget_pct: 56,
@@ -40,6 +41,7 @@ export const MOCK_PROJECTS: ProjectSummary[] = [
     status: 'active',
     rag_status: 'IN_LINEA',
     current_phase: 'planning_design',
+    current_phase_display_name: 'Planning & Design',
     budget_total: 42000,
     budget_spent: 8400,
     budget_pct: 20,
@@ -52,6 +54,7 @@ export const MOCK_PROJECTS: ProjectSummary[] = [
     status: 'closed',
     rag_status: 'FUORI_BUDGET',
     current_phase: 'closure',
+    current_phase_display_name: 'Closure',
     budget_total: 95000,
     budget_spent: 112300,
     budget_pct: 118,
@@ -74,13 +77,15 @@ export const MOCK_DASHBOARD: DashboardData = {
     rag_status: 'A_RISCHIO',
     last_sync_at: '2026-05-09T18:30:00Z',
     last_sync_source: 'manual',
+    hours_spent_to_date: 320,
+    working_days_used: 58,
   },
   phase_budgets: [
-    { phase_id: 1, phase_type: 'feasibility',     planned_start: '2026-01-05', planned_end: '2026-01-20', working_days: 12, planned_hours: 96,  burn_rate_per_day: 340, budget: 4080,  budget_pct_of_total: 6.3 },
-    { phase_id: 2, phase_type: 'planning_design', planned_start: '2026-01-21', planned_end: '2026-02-27', working_days: 28, planned_hours: 224, burn_rate_per_day: 440, budget: 12320, budget_pct_of_total: 19.1 },
-    { phase_id: 3, phase_type: 'build',           planned_start: '2026-03-02', planned_end: '2026-06-19', working_days: 80, planned_hours: 640, burn_rate_per_day: 520, budget: 41600, budget_pct_of_total: 64.4 },
-    { phase_id: 4, phase_type: 'deployment',      planned_start: '2026-06-22', planned_end: '2026-07-10', working_days: 15, planned_hours: 120, burn_rate_per_day: 400, budget: 6000,  budget_pct_of_total: 9.3 },
-    { phase_id: 5, phase_type: 'closure',         planned_start: '2026-07-13', planned_end: '2026-07-22', working_days: 8,  planned_hours: 64,  burn_rate_per_day: 325, budget: 2600,  budget_pct_of_total: 4.0 },
+    { phase_id: 1, phase_type: 'feasibility',     display_name: 'Feasibility',       planned_start: '2026-01-05', planned_end: '2026-01-20', working_days: 12, planned_hours: 96,  burn_rate_per_day: 340, budget: 4080,  budget_pct_of_total: 6.3 },
+    { phase_id: 2, phase_type: 'planning_design', display_name: 'Planning & Design', planned_start: '2026-01-21', planned_end: '2026-02-27', working_days: 28, planned_hours: 224, burn_rate_per_day: 440, budget: 12320, budget_pct_of_total: 19.1 },
+    { phase_id: 3, phase_type: 'build',           display_name: 'Build',             planned_start: '2026-03-02', planned_end: '2026-06-19', working_days: 80, planned_hours: 640, burn_rate_per_day: 520, budget: 41600, budget_pct_of_total: 64.4 },
+    { phase_id: 4, phase_type: 'deployment',      display_name: 'Deployment',        planned_start: '2026-06-22', planned_end: '2026-07-10', working_days: 15, planned_hours: 120, burn_rate_per_day: 400, budget: 6000,  budget_pct_of_total: 9.3 },
+    { phase_id: 5, phase_type: 'closure',         display_name: 'Closure',           planned_start: '2026-07-13', planned_end: '2026-07-22', working_days: 8,  planned_hours: 64,  burn_rate_per_day: 325, budget: 2600,  budget_pct_of_total: 4.0 },
   ],
   milestones: [
     { id: 1, name: 'Feasibility Sign-off', planned_date: '2026-01-20', actual_date: '2026-01-22', status: 'completed',   is_milestone: true },
@@ -98,15 +103,14 @@ export const MOCK_BASELINE: BaselineData = {
   project_name: 'RXI Platform',
   is_locked: false,
   locked_at: null,
-  contingency_pct: 10,
   total_budget: 66600,
   total_forecast: 67008,
   phases: [
-    { phase_id: 1, phase_type: 'feasibility',     order: 1, planned_start: '2026-01-05', planned_end: '2026-01-20', working_days: 12, planned_hours: 96,  budget: 4080,  contingency_pct: 10, status: 'completed',   is_locked: false },
-    { phase_id: 2, phase_type: 'planning_design', order: 2, planned_start: '2026-01-21', planned_end: '2026-02-27', working_days: 28, planned_hours: 224, budget: 12320, contingency_pct: 0,  status: 'completed',   is_locked: false },
-    { phase_id: 3, phase_type: 'build',           order: 3, planned_start: '2026-03-02', planned_end: '2026-06-19', working_days: 80, planned_hours: 640, budget: 41600, contingency_pct: 0,  status: 'in_progress', is_locked: false },
-    { phase_id: 4, phase_type: 'deployment',      order: 4, planned_start: '2026-06-22', planned_end: '2026-07-10', working_days: 15, planned_hours: 120, budget: 6000,  contingency_pct: 0,  status: 'not_started', is_locked: false },
-    { phase_id: 5, phase_type: 'closure',         order: 5, planned_start: '2026-07-13', planned_end: '2026-07-22', working_days: 8,  planned_hours: 64,  budget: 2600,  contingency_pct: 0,  status: 'not_started', is_locked: false },
+    { phase_id: 1, phase_type: 'feasibility',     display_name: 'Feasibility',       order: 1, planned_start: '2026-01-05', planned_end: '2026-01-20', working_days: 12, planned_hours: 96,  budget: 4080,  contingency_pct: 10, status: 'completed',   is_locked: false },
+    { phase_id: 2, phase_type: 'planning_design', display_name: 'Planning & Design', order: 2, planned_start: '2026-01-21', planned_end: '2026-02-27', working_days: 28, planned_hours: 224, budget: 12320, contingency_pct: 0,  status: 'completed',   is_locked: false },
+    { phase_id: 3, phase_type: 'build',           display_name: 'Build',             order: 3, planned_start: '2026-03-02', planned_end: '2026-06-19', working_days: 80, planned_hours: 640, budget: 41600, contingency_pct: 0,  status: 'in_progress', is_locked: false },
+    { phase_id: 4, phase_type: 'deployment',      display_name: 'Deployment',        order: 4, planned_start: '2026-06-22', planned_end: '2026-07-10', working_days: 15, planned_hours: 120, budget: 6000,  contingency_pct: 0,  status: 'not_started', is_locked: false },
+    { phase_id: 5, phase_type: 'closure',         display_name: 'Closure',           order: 5, planned_start: '2026-07-13', planned_end: '2026-07-22', working_days: 8,  planned_hours: 64,  budget: 2600,  contingency_pct: 0,  status: 'not_started', is_locked: false },
   ],
 };
 
@@ -124,7 +128,7 @@ export const MOCK_ALLOCATION: AllocationData = {
   all_resources: MOCK_RESOURCES_LIST,
   phases: [
     {
-      phase_id: 1, phase_type: 'feasibility', planned_start: '2026-01-05', planned_end: '2026-01-20',
+      phase_id: 1, phase_type: 'feasibility', display_name: 'Feasibility', planned_start: '2026-01-05', planned_end: '2026-01-20',
       resources: [MOCK_RESOURCES_LIST[0], MOCK_RESOURCES_LIST[2]],
       phase_budget: 4080, avg_fte: 0.35, burn_rate_per_day: 340,
       cells: [
@@ -137,7 +141,7 @@ export const MOCK_ALLOCATION: AllocationData = {
       ],
     },
     {
-      phase_id: 2, phase_type: 'planning_design', planned_start: '2026-01-21', planned_end: '2026-02-27',
+      phase_id: 2, phase_type: 'planning_design', display_name: 'Planning & Design', planned_start: '2026-01-21', planned_end: '2026-02-27',
       resources: MOCK_RESOURCES_LIST,
       phase_budget: 12320, avg_fte: 0.47, burn_rate_per_day: 440,
       cells: [
@@ -159,7 +163,7 @@ export const MOCK_ALLOCATION: AllocationData = {
       ],
     },
     {
-      phase_id: 3, phase_type: 'build', planned_start: '2026-03-02', planned_end: '2026-06-19',
+      phase_id: 3, phase_type: 'build', display_name: 'Build', planned_start: '2026-03-02', planned_end: '2026-06-19',
       resources: [MOCK_RESOURCES_LIST[0], MOCK_RESOURCES_LIST[1]],
       phase_budget: 41600, avg_fte: 0.65, burn_rate_per_day: 520,
       cells: [
@@ -174,7 +178,7 @@ export const MOCK_ALLOCATION: AllocationData = {
       ],
     },
     {
-      phase_id: 4, phase_type: 'deployment', planned_start: '2026-06-22', planned_end: '2026-07-10',
+      phase_id: 4, phase_type: 'deployment', display_name: 'Deployment', planned_start: '2026-06-22', planned_end: '2026-07-10',
       resources: MOCK_RESOURCES_LIST,
       phase_budget: 6000, avg_fte: 0.4, burn_rate_per_day: 400,
       cells: [
@@ -187,7 +191,7 @@ export const MOCK_ALLOCATION: AllocationData = {
       ],
     },
     {
-      phase_id: 5, phase_type: 'closure', planned_start: '2026-07-13', planned_end: '2026-07-22',
+      phase_id: 5, phase_type: 'closure', display_name: 'Closure', planned_start: '2026-07-13', planned_end: '2026-07-22',
       resources: [MOCK_RESOURCES_LIST[0]],
       phase_budget: 2600, avg_fte: 0.5, burn_rate_per_day: 325,
       cells: [
@@ -297,7 +301,7 @@ export const MOCK_GANTT: GanttData = {
   project_end: '2026-07-22',
   phases: [
     {
-      phase_id: 1, phase_type: 'feasibility',
+      phase_id: 1, phase_type: 'feasibility', display_name: 'Feasibility',
       planned_start: '2026-01-05', planned_end: '2026-01-20', status: 'completed',
       tasks: [
         { id: 1, project_id: 1, phase_id: 1, phase_type: 'feasibility', name: 'Stakeholder interviews', owner: 'Giuseppe', start_date: '2026-01-05', end_date: '2026-01-12', working_days: 6, is_milestone: false, actual_date: null, status: 'completed' },
@@ -306,7 +310,7 @@ export const MOCK_GANTT: GanttData = {
       ],
     },
     {
-      phase_id: 2, phase_type: 'planning_design',
+      phase_id: 2, phase_type: 'planning_design', display_name: 'Planning & Design',
       planned_start: '2026-01-21', planned_end: '2026-02-27', status: 'completed',
       tasks: [
         { id: 4, project_id: 1, phase_id: 2, phase_type: 'planning_design', name: 'Requirements gathering', owner: 'Vivekananda', start_date: '2026-01-21', end_date: '2026-02-06', working_days: 13, is_milestone: false, actual_date: null, status: 'completed' },
@@ -315,7 +319,7 @@ export const MOCK_GANTT: GanttData = {
       ],
     },
     {
-      phase_id: 3, phase_type: 'build',
+      phase_id: 3, phase_type: 'build', display_name: 'Build',
       planned_start: '2026-03-02', planned_end: '2026-06-19', status: 'in_progress',
       tasks: [
         { id: 7,  project_id: 1, phase_id: 3, phase_type: 'build', name: 'Sprint 1 — Core API',       owner: 'Vishal',    start_date: '2026-03-02', end_date: '2026-03-27', working_days: 20, is_milestone: false, actual_date: null, status: 'completed' },
@@ -327,7 +331,7 @@ export const MOCK_GANTT: GanttData = {
       ],
     },
     {
-      phase_id: 4, phase_type: 'deployment',
+      phase_id: 4, phase_type: 'deployment', display_name: 'Deployment',
       planned_start: '2026-06-22', planned_end: '2026-07-10', status: 'not_started',
       tasks: [
         { id: 13, project_id: 1, phase_id: 4, phase_type: 'deployment', name: 'Production deploy', owner: 'Vishal',   start_date: '2026-06-22', end_date: '2026-07-03', working_days: 10, is_milestone: false, actual_date: null, status: 'not_started' },
@@ -335,7 +339,7 @@ export const MOCK_GANTT: GanttData = {
       ],
     },
     {
-      phase_id: 5, phase_type: 'closure',
+      phase_id: 5, phase_type: 'closure', display_name: 'Closure',
       planned_start: '2026-07-13', planned_end: '2026-07-22', status: 'not_started',
       tasks: [
         { id: 15, project_id: 1, phase_id: 5, phase_type: 'closure', name: 'Lessons learned', owner: 'Giuseppe', start_date: '2026-07-13', end_date: '2026-07-18', working_days: 4, is_milestone: false, actual_date: null, status: 'not_started' },

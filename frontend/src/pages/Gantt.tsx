@@ -3,17 +3,9 @@ import { useParams } from 'react-router-dom';
 import AppNav from '../components/AppNav';
 import DateInput from '../components/DateInput';
 import { fetchGantt, updateTask, createTask, deleteTask, type TaskPayload } from '../api/gantt';
-import type { GanttData, GanttPhaseData, GanttTask, PhaseType, TaskStatus } from '../types';
+import type { GanttData, GanttPhaseData, GanttTask, TaskStatus } from '../types';
 
 type GanttView = 'phases' | 'full' | 'milestones';
-
-const PHASE_LABEL: Record<PhaseType, string> = {
-  feasibility:     'Feasibility',
-  planning_design: 'Planning & Design',
-  build:           'Build',
-  deployment:      'Deployment',
-  closure:         'Closure',
-};
 
 const STATUS_LABEL: Record<TaskStatus, string> = {
   not_started: 'Non iniziato',
@@ -68,7 +60,7 @@ function statusBg(status: string): string {
 interface ModalState {
   mode: 'edit' | 'create';
   phaseId: number;
-  phaseType: PhaseType;
+  phaseName: string;
   phaseStart: string;
   phaseEnd: string;
   taskId?: number;
@@ -132,7 +124,7 @@ function TaskModal({ state, projectId, onClose, onSaved }: TaskModalProps) {
       if (form.mode === 'edit' && form.taskId !== undefined) {
         await updateTask(projectId, form.taskId, payload);
       } else {
-        await createTask(projectId, { ...payload, phase_id: form.phaseId, phase_type: form.phaseType });
+        await createTask(projectId, { ...payload, phase_id: form.phaseId });
       }
       onSaved();
       onClose();
@@ -162,7 +154,7 @@ function TaskModal({ state, projectId, onClose, onSaved }: TaskModalProps) {
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-surface border border-border rounded-2xl shadow-card p-6 w-full max-w-md mx-4 space-y-4">
         <h2 className="text-lg font-bold">
-          {form.mode === 'edit' ? 'Modifica task' : `Aggiungi task — ${PHASE_LABEL[form.phaseType]}`}
+          {form.mode === 'edit' ? 'Modifica task' : `Aggiungi task — ${form.phaseName}`}
         </h2>
 
         {/* Name */}
@@ -361,7 +353,7 @@ function PhasesView({ phases, projectStart, totalWidth, weeks }: {
           <div className="sticky left-0 z-20 flex items-center gap-2.5 border-r border-border px-4 bg-surface flex-shrink-0" style={{ width: LABEL_W }}>
             <div className={`w-2 h-2 rounded-full flex-shrink-0 ${statusBg(phase.status)}`} />
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-text-primary truncate">{PHASE_LABEL[phase.phase_type]}</p>
+              <p className="text-sm font-semibold text-text-primary truncate">{phase.display_name}</p>
               <p className="text-xs text-text-dim">{fmtShort(phase.planned_start)} → {fmtShort(phase.planned_end)}</p>
             </div>
           </div>
@@ -383,8 +375,8 @@ function PhasesView({ phases, projectStart, totalWidth, weeks }: {
 function FullView({ phases, projectStart, totalWidth, weeks, collapsed, onToggle, onEditTask, onAddTask, onUpdateMilestone }: {
   phases: GanttPhaseData[]; projectStart: string; totalWidth: number; weeks: string[];
   collapsed: Set<number>; onToggle: (id: number) => void;
-  onEditTask: (task: GanttTask, phaseType: PhaseType) => void;
-  onAddTask: (phaseId: number, phaseType: PhaseType) => void;
+  onEditTask: (task: GanttTask, phaseName: string) => void;
+  onAddTask: (phaseId: number, phaseName: string) => void;
   onUpdateMilestone: (taskId: number, val: string) => Promise<void>;
 }) {
   return (
@@ -403,7 +395,7 @@ function FullView({ phases, projectStart, totalWidth, weeks, collapsed, onToggle
                 <span className="text-text-dim text-xs flex-shrink-0">{isCollapsed ? '▶' : '▼'}</span>
                 <div className={`w-2 h-2 rounded-full flex-shrink-0 ${statusBg(phase.status)}`} />
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-text-primary truncate">{PHASE_LABEL[phase.phase_type]}</p>
+                  <p className="text-sm font-semibold text-text-primary truncate">{phase.display_name}</p>
                   <p className="text-xs text-text-dim">{phase.tasks.length} task</p>
                 </div>
               </div>
@@ -421,7 +413,7 @@ function FullView({ phases, projectStart, totalWidth, weeks, collapsed, onToggle
                     key={task.id}
                     className="flex border-b border-border/40 bg-surface hover:bg-surface-2/30 transition-colors cursor-pointer"
                     style={{ height: ROW_PX }}
-                    onClick={() => onEditTask(task, phase.phase_type)}
+                    onClick={() => onEditTask(task, phase.display_name)}
                   >
                     <div
                       className="sticky left-0 z-20 flex items-center gap-2 border-r border-border/60 bg-surface flex-shrink-0 pr-2"
@@ -463,7 +455,7 @@ function FullView({ phases, projectStart, totalWidth, weeks, collapsed, onToggle
                 <div
                   className="flex border-b border-border/30 bg-surface/60 hover:bg-surface-2/20 transition-colors cursor-pointer"
                   style={{ height: 36 }}
-                  onClick={(e) => { e.stopPropagation(); onAddTask(phase.phase_id, phase.phase_type); }}
+                  onClick={(e) => { e.stopPropagation(); onAddTask(phase.phase_id, phase.display_name); }}
                 >
                   <div
                     className="sticky left-0 z-20 flex items-center gap-1.5 border-r border-border/40 bg-surface/60 flex-shrink-0 text-text-dim hover:text-accent transition-colors"
@@ -490,7 +482,7 @@ function MilestoneView({ phases, projectStart, totalWidth, weeks, onUpdateMilest
   onUpdateMilestone: (taskId: number, val: string) => Promise<void>;
 }) {
   const milestones = phases.flatMap((p) =>
-    p.tasks.filter((t) => t.is_milestone).map((t) => ({ ...t, _phaseType: p.phase_type }))
+    p.tasks.filter((t) => t.is_milestone).map((t) => ({ ...t, _phaseName: p.display_name }))
   );
 
   if (milestones.length === 0) {
@@ -575,12 +567,12 @@ export default function Gantt() {
     });
   }
 
-  function openEditModal(task: GanttTask, phaseType: PhaseType) {
+  function openEditModal(task: GanttTask, phaseName: string) {
     const phase = data?.phases.find((p) => p.phase_id === task.phase_id);
     setModal({
       mode: 'edit',
       phaseId: task.phase_id,
-      phaseType,
+      phaseName,
       phaseStart: phase?.planned_start ?? '',
       phaseEnd:   phase?.planned_end   ?? '',
       taskId: task.id,
@@ -594,12 +586,12 @@ export default function Gantt() {
     });
   }
 
-  function openAddModal(phaseId: number, phaseType: PhaseType) {
+  function openAddModal(phaseId: number, phaseName: string) {
     const phase = data?.phases.find((p) => p.phase_id === phaseId);
     setModal({
       mode: 'create',
       phaseId,
-      phaseType,
+      phaseName,
       phaseStart: phase?.planned_start ?? '',
       phaseEnd:   phase?.planned_end   ?? '',
       name: '',
