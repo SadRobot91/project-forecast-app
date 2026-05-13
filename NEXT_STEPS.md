@@ -123,20 +123,26 @@ display_name fase) perché quelli SONO la BAC.
   nello stesso payload, va splittato in `PATCH /phases/:id` (dates only,
   permesso anche dopo lock) e `PUT /baseline` (parametri BAC, locked).
 
-### Step C — Service-layer aggregator (~3–4h)
+### Step C — Service-layer aggregator (~3–4h) — **DONE**
 
-Vedi sezione 2.1 di questo documento (versione service-layer). Estrarre la
-SUM cross-project oggi duplicata in tre endpoint (`/resources/registry`,
-`/allocation/warnings`, e implicita nel calcolo budget) in un service
-condiviso `backend/src/services/allocationAggregator.ts` che diventa il
-**single point of truth** per la regola `Σ FTE ≤ 1.0`. AllocationEntry resta
-l'unica fonte di verità — niente tabella aggiuntiva, niente sync code,
-niente rischio di drift.
+> ✅ Implementato in `backend/src/services/allocationAggregator.ts`.
+> Refactor di `/resources/registry` e `/allocation/warnings` per delegare
+> al service. `canAllocate` esposta e pronta per Step D (write-side
+> enforcement con advisory lock).
+
+Estratto la SUM cross-project che era duplicata in tre endpoint
+(`/resources/registry`, `/allocation/warnings`, e implicita nel calcolo
+budget) in un service condiviso che diventa il **single point of truth**
+per la regola `Σ FTE ≤ 1.0`. AllocationEntry resta l'unica fonte di verità
+— niente tabella aggiuntiva, niente sync code, niente rischio di drift.
 
 API del service:
 - `getWeeklyTotal(resource_id, week_start, opts?)` — somma FTE su tutti i progetti
-- `canAllocate(resource_id, week_start, requested_fte, exclude_project_id)` — true/false + dettaglio
+- `canAllocate(resource_id, week_start, requested_fte, opts?)` — { ok, current_total, requested, would_be, excess?, breakdown? }
 - `getRegistryAggregate(opts?)` — versione aggregata per `/resources/registry`
+
+Tutti accettano `opts.query` per injection (i test unitari usano stub
+fn, niente jest.mock sul modulo db).
 
 ### Step D — FTE cap enforcement sul write (~1gg, dopo Step C)
 
@@ -179,7 +185,14 @@ Quick fix: trigger cascade su `PUT /resources/:id` che ricalcola
 Vedi punto ⑥ in `ARCHITECTURE_AS_IS.md`. Workstream separato, può andare in
 parallelo agli altri da B in poi.
 
-### Step I — Date di fase mutabili dopo lock (~1gg, dopo B)
+### Step I — Date di fase mutabili dopo lock (~1gg, dopo B) — **ANTICIPATO**
+
+> 🟢 **Anticipato rispetto alla sequenza A→B→C→D→…**
+> Implementato subito dopo Step B per chiudere il loop sulla mutabilità
+> della working copy. Senza Step I, il caso "ritardo sorgente → dilato la
+> timeline" rimaneva scoperto perché `PUT /baseline` resta giustamente
+> rifiutato dopo il lock e non c'era altro endpoint per spostare le date.
+> Backend completo, frontend ancora da consumare (vedi follow-up sotto).
 
 Quando la sorgente dati slitta o un dipendency cambia tempistiche, il PM
 deve poter dilatare la timeline della working copy senza che questo tocchi
@@ -197,6 +210,15 @@ Soluzione: splittare l'endpoint.
 Frontend: in Pianificazione tab Fasi, dopo il lock, gli input date restano
 editabili (con etichetta "Working copy — la BAC originale è del DD/MM/YY").
 Contingency e display_name diventano read-only.
+
+**Stato implementazione:**
+- ✅ Backend `PATCH /api/projects/:id/phases/:phase_id` — fatto
+- ✅ Validazione: status enum, end ≥ start (con valore corrente per la
+  side non fornita), 404 se phase non appartiene al progetto
+- ✅ Test su tutti i path (status alone, date change con ricalcolo
+  working_days, status+date insieme, validation 400, 404)
+- ⏳ Frontend: `Pianificazione.tsx` deve usare il nuovo endpoint quando
+  baseline è lockata, invece di PUT /baseline. Da fare in una PR dedicata.
 
 ### Step J — Re-baselining (scope change formale, future feature)
 
