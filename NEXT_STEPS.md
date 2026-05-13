@@ -91,20 +91,26 @@ display_name fase) perché quelli SONO la BAC.
   nello stesso payload, va splittato in `PATCH /phases/:id` (dates only,
   permesso anche dopo lock) e `PUT /baseline` (parametri BAC, locked).
 
-### Step C — Service-layer aggregator (~3–4h)
+### Step C — Service-layer aggregator (~3–4h) — **DONE**
 
-Vedi sezione 2.1 di questo documento (versione service-layer). Estrarre la
-SUM cross-project oggi duplicata in tre endpoint (`/resources/registry`,
-`/allocation/warnings`, e implicita nel calcolo budget) in un service
-condiviso `backend/src/services/allocationAggregator.ts` che diventa il
-**single point of truth** per la regola `Σ FTE ≤ 1.0`. AllocationEntry resta
-l'unica fonte di verità — niente tabella aggiuntiva, niente sync code,
-niente rischio di drift.
+> ✅ Implementato in `backend/src/services/allocationAggregator.ts`.
+> Refactor di `/resources/registry` e `/allocation/warnings` per delegare
+> al service. `canAllocate` esposta e pronta per Step D (write-side
+> enforcement con advisory lock).
+
+Estratto la SUM cross-project che era duplicata in tre endpoint
+(`/resources/registry`, `/allocation/warnings`, e implicita nel calcolo
+budget) in un service condiviso che diventa il **single point of truth**
+per la regola `Σ FTE ≤ 1.0`. AllocationEntry resta l'unica fonte di verità
+— niente tabella aggiuntiva, niente sync code, niente rischio di drift.
 
 API del service:
 - `getWeeklyTotal(resource_id, week_start, opts?)` — somma FTE su tutti i progetti
-- `canAllocate(resource_id, week_start, requested_fte, exclude_project_id)` — true/false + dettaglio
+- `canAllocate(resource_id, week_start, requested_fte, opts?)` — { ok, current_total, requested, would_be, excess?, breakdown? }
 - `getRegistryAggregate(opts?)` — versione aggregata per `/resources/registry`
+
+Tutti accettano `opts.query` per injection (i test unitari usano stub
+fn, niente jest.mock sul modulo db).
 
 ### Step D — FTE cap enforcement sul write (~1gg, dopo Step C)
 

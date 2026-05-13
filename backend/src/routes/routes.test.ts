@@ -15,6 +15,15 @@ jest.mock('../services/computations', () => ({
   calculateRAGStatus: jest.fn(() => 'IN_LINEA'),
 }));
 
+// ── Mock allocationAggregator: the routes delegate to it ──────────────────────
+const mockGetWeeklyTotal = jest.fn();
+const mockGetRegistryAggregate = jest.fn();
+jest.mock('../services/allocationAggregator', () => ({
+  getWeeklyTotal:        (...args: any[]) => mockGetWeeklyTotal(...args),
+  getRegistryAggregate:  (...args: any[]) => mockGetRegistryAggregate(...args),
+  canAllocate:           jest.fn(),
+}));
+
 import express from 'express';
 import request from 'supertest';
 
@@ -31,7 +40,11 @@ function dbOk(rows: any[], rowCount = rows.length) {
   return { rows, rowCount };
 }
 
-beforeEach(() => mockQuery.mockReset());
+beforeEach(() => {
+  mockQuery.mockReset();
+  mockGetWeeklyTotal.mockReset();
+  mockGetRegistryAggregate.mockReset();
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // PROJECTS
@@ -205,20 +218,25 @@ describe('GET /api/resources/registry', () => {
     app = makeApp(router, '/api/resources');
   });
 
-  it('returns weeks array (not months) and project_status in allocations', async () => {
-    mockQuery.mockResolvedValueOnce(dbOk([
-      { resource_id: 1, resource_name: 'Giuseppe', role: 'PM', day_rate: '680',
-        project_id: 1, project_name: 'RXI Platform', project_status: 'active',
-        week_start: '2026-03-02', fte: '0.3' },
-    ]));
+  it('delegates to AllocationAggregator and returns its response verbatim', async () => {
+    const aggregate = {
+      weeks: ['2026-03-02'],
+      rows: [{
+        resource: { id: 1, name: 'Giuseppe', role: 'PM', day_rate: 680 },
+        allocations: [{
+          project_id: 1, project_name: 'RXI Platform', project_status: 'active',
+          week_start: '2026-03-02', fte: 0.3,
+        }],
+        totals: { '2026-03-02': 0.3 },
+      }],
+      has_overallocation: false,
+    };
+    mockGetRegistryAggregate.mockResolvedValueOnce(aggregate);
 
     const res = await request(app).get('/api/resources/registry');
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('weeks');
-    expect(res.body).not.toHaveProperty('months');
-    expect(res.body.rows[0].allocations[0]).toHaveProperty('week_start', '2026-03-02');
-    expect(res.body.rows[0].allocations[0]).toHaveProperty('project_status', 'active');
-    expect(res.body.rows[0].allocations[0]).not.toHaveProperty('month');
+    expect(res.body).toEqual(aggregate);
+    expect(mockGetRegistryAggregate).toHaveBeenCalledTimes(1);
   });
 
   // Step B: PUT /resources/:id always proceeds. The locked BAC is
@@ -242,14 +260,16 @@ describe('GET /api/resources/registry', () => {
     });
   });
 
-  it('detects overallocation across projects', async () => {
-    mockQuery.mockResolvedValueOnce(dbOk([
-      { resource_id: 2, resource_name: 'Vishal', role: 'Dev', day_rate: '600',
-        project_id: 1, project_name: 'RXI', project_status: 'active', week_start: '2026-06-01', fte: '0.8' },
-      { resource_id: 2, resource_name: 'Vishal', role: 'Dev', day_rate: '600',
-        project_id: 2, project_name: 'PChal', project_status: 'active', week_start: '2026-06-01', fte: '0.5' },
-    ]));
-
+  it('propagates has_overallocation from the aggregator', async () => {
+    mockGetRegistryAggregate.mockResolvedValueOnce({
+      weeks: ['2026-06-01'],
+      rows: [{
+        resource: { id: 2, name: 'Vishal', role: 'Dev', day_rate: 600 },
+        allocations: [],
+        totals: { '2026-06-01': 1.3 },
+      }],
+      has_overallocation: true,
+    });
     const res = await request(app).get('/api/resources/registry');
     expect(res.status).toBe(200);
     expect(res.body.has_overallocation).toBe(true);
@@ -770,22 +790,24 @@ describe('GET /api/projects/:id/allocation/warnings', () => {
     expect(res.body.error).toContain('week_start');
   });
 
-  it('validates FTE for a given week_start', async () => {
-    mockQuery.mockResolvedValueOnce(dbOk([
-      { project_id: 1, week_start: '2026-06-01', fte: '0.8' },
-      { project_id: 2, week_start: '2026-06-01', fte: '0.5' },
-    ]));
+  it('returns isValid=true when total stays within 1.0', async () => {
+    // Two calls: one with excludeProjectId, one without (to derive self total)
+    mockGetWeeklyTotal.mockResolvedValueOnce(0.5).mockResolvedValueOnce(0.8);
 
-    const { validateFTE } = require('../services/computations');
-    (validateFTE as jest.Mock).mockReturnValueOnce({
-      isValid: false,
-      warnings: [{ projectId: 1, week_start: '2026-06-01', excess: 0.3 }],
-    });
+    const res = await request(app).get('/api/projects/1/allocation/warnings?resource_id=2&week_start=2026-06-01');
+    expect(res.status).toBe(200);
+    expect(res.body.isValid).toBe(true);
+    expect(res.body.warnings).toEqual([]);
+  });
+
+  it('returns isValid=false with excess when total exceeds 1.0', async () => {
+    mockGetWeeklyTotal.mockResolvedValueOnce(0.5).mockResolvedValueOnce(1.3);
 
     const res = await request(app).get('/api/projects/1/allocation/warnings?resource_id=2&week_start=2026-06-01');
     expect(res.status).toBe(200);
     expect(res.body.isValid).toBe(false);
     expect(res.body.warnings[0]).toHaveProperty('week_start', '2026-06-01');
+    expect(res.body.warnings[0].excess).toBeCloseTo(0.3, 5);
     expect(res.body.warnings[0]).not.toHaveProperty('month');
   });
 });
