@@ -92,6 +92,11 @@ export default function Baseline() {
 
   async function handleSave() {
     if (!projectId) return;
+    const invalid = phases.find((p) => p.planned_end && p.planned_start && p.planned_end < p.planned_start);
+    if (invalid) {
+      setSaveError(`La data di fine di "${invalid.display_name}" è precedente alla data di inizio.`);
+      return;
+    }
     setSaveLoading(true);
     setSaveError(null);
     try {
@@ -258,7 +263,11 @@ export default function Baseline() {
                   </td>
                   <td className="px-4 py-3 font-medium text-text-primary">{row.working_days}</td>
                   <td className="px-4 py-3 text-text-muted">{row.planned_hours}</td>
-                  <td className="px-4 py-3 font-medium text-text-primary">{fmt(row.budget)}</td>
+                  <td className="px-4 py-3 font-medium text-text-primary">
+                    {row.budget > 0 ? fmt(row.budget) : (
+                      <span className="text-text-dim text-xs">£0 — definito in Allocation</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <input

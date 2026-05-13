@@ -29,6 +29,7 @@ export interface ProjectSummary {
   status: ProjectStatus;
   rag_status: RAGStatus;
   current_phase: string | null;
+  current_phase_display_name: string | null;
   budget_total: number;
   budget_spent: number;
   budget_pct: number;
@@ -60,6 +61,8 @@ export interface DashboardKPIs {
   rag_status: RAGStatus;
   last_sync_at: string | null;
   last_sync_source: 'manual' | 'keyedin_api' | null;
+  hours_spent_to_date: number;
+  working_days_used: number;
 }
 
 export interface PhaseBudgetRow {

@@ -19,7 +19,7 @@ router.get('/', async (req, res) => {
 
     // Phases with budget from allocations
     const phasesRes = await query(
-      `SELECT pp.id as phase_id, pp.phase_type, pp.planned_start, pp.planned_end,
+      `SELECT pp.id as phase_id, pp.phase_type, pp.display_name, pp.planned_start, pp.planned_end,
               pp.working_days, pp.planned_hours, pp.status,
               COALESCE(SUM(ae.weekly_cost), 0)::numeric as budget
        FROM "ProjectPhase" pp
@@ -69,9 +69,11 @@ router.get('/', async (req, res) => {
       }
     }
 
-    const avgCostPerHour = hoursSpent > 0 && costSpent > 0 ? costSpent / hoursSpent : 0;
-    const revisedForecast = calculateRevisedForecast(
-      hoursSpent, costSpent, dailyBurnRate, daysRemaining, avgCostPerHour, 0
+    const totalPlannedHours = phases.reduce((s: number, p: any) => s + (p.planned_hours ?? (p.working_days ?? 0) * 8), 0);
+    const hoursRemaining    = Math.max(0, totalPlannedHours - hoursSpent);
+    const avgCostPerHour    = hoursSpent > 0 && costSpent > 0 ? costSpent / hoursSpent : 0;
+    const revisedForecast   = calculateRevisedForecast(
+      hoursSpent, costSpent, dailyBurnRate, daysRemaining, avgCostPerHour, hoursRemaining
     );
     const ragStatus  = calculateRAGStatus(revisedForecast, totalBudget);
     const budgetPct  = totalBudget > 0 ? Math.round((costSpent / totalBudget) * 100) : 0;
@@ -83,6 +85,7 @@ router.get('/', async (req, res) => {
       return {
         phase_id:          p.phase_id,
         phase_type:        p.phase_type,
+        display_name:      p.display_name ?? p.phase_type,
         planned_start:     isoDate(p.planned_start),
         planned_end:       isoDate(p.planned_end),
         working_days:      wd,
@@ -106,9 +109,11 @@ router.get('/', async (req, res) => {
         variance,
         days_remaining:    daysRemaining,
         budget_pct:        budgetPct,
-        rag_status:        ragStatus,
-        last_sync_at:      ongoing?.created_at ?? null,
-        last_sync_source:  ongoing?.source ?? null,
+        rag_status:             ragStatus,
+        last_sync_at:           ongoing?.created_at ?? null,
+        last_sync_source:       ongoing?.source ?? null,
+        hours_spent_to_date:    hoursSpent,
+        working_days_used:      ongoing?.working_days_used ?? 0,
       },
       phase_budgets: phaseBudgets,
       milestones: milestonesRes.rows.map((m: any) => ({

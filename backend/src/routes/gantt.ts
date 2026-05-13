@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
 
     const tasksRes = await query(
       `SELECT id, project_id, phase_id, name, owner,
-              start_date, end_date, working_days, is_milestone, actual_date
+              start_date, end_date, working_days, is_milestone, actual_date, status
        FROM "GanttTask" WHERE project_id = $1 ORDER BY phase_id, start_date`,
       [projectId]
     );
@@ -60,7 +60,7 @@ router.get('/', async (req, res) => {
           working_days: t.working_days,
           is_milestone: t.is_milestone,
           actual_date:  t.actual_date ? isoDate(t.actual_date) : null,
-          status:       computeStatus(t.start_date, t.end_date, t.actual_date),
+          status:       t.status ?? 'not_started',
         }));
       return {
         phase_id:      ph.phase_id,

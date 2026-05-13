@@ -46,6 +46,7 @@ export default function Settings() {
     const name = editingName.trim();
     const pct  = parseFloat(editingContingency);
     if (!name) { setEditingId(null); return; }
+    setError(null);
     try {
       const updated = await updatePhaseTemplate(id, {
         display_name:            name,
@@ -64,6 +65,7 @@ export default function Settings() {
     const idx    = sorted.findIndex((t) => t.id === id);
     const target = sorted[idx + direction];
     if (!target) return;
+    setError(null);
     try {
       const [a, b] = await Promise.all([
         updatePhaseTemplate(id,        { order: target.order }),
@@ -81,6 +83,7 @@ export default function Settings() {
   async function handleAdd() {
     const name = newName.trim();
     if (!name) return;
+    setError(null);
     setAdding(true);
     try {
       const maxOrder = templates.reduce((m, t) => Math.max(m, t.order), 0);
@@ -96,6 +99,7 @@ export default function Settings() {
 
   async function handleDeleteConfirm() {
     if (!deleteTarget) return;
+    setError(null);
     setDeleting(true);
     try {
       await deletePhaseTemplate(deleteTarget.id);

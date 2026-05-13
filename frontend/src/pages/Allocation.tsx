@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import AppNav from '../components/AppNav';
 import FTECell from '../components/FTECell';
 import { fetchAllocation, saveAllocationPhase, createResource, fetchResourceRegistry } from '../api/allocation';
+import { fetchBaseline } from '../api/baseline';
 import { weeksInRange, fmtWeek } from '../utils/networkDays';
 import type { AllocationData, AllocationPhaseMatrix, AllocationCell, Resource } from '../types';
 
@@ -89,10 +90,11 @@ interface PhaseBlockProps {
   projectId: string;
   allResources: Resource[];
   crossTotals: Record<string, number>;
+  isBaselineLocked: boolean;
   onSaved: () => void;
 }
 
-function PhaseBlock({ phase, projectId, allResources, crossTotals, onSaved }: PhaseBlockProps) {
+function PhaseBlock({ phase, projectId, allResources, crossTotals, isBaselineLocked, onSaved }: PhaseBlockProps) {
   const [open, setOpen] = useState(true);
   const [resources, setResources] = useState<Resource[]>(phase.resources);
   const [cells, setCells] = useState<AllocationCell[]>(phase.cells);
@@ -254,17 +256,22 @@ function PhaseBlock({ phase, projectId, allResources, crossTotals, onSaved }: Ph
           <div className="px-5 py-3 border-t border-border flex items-center justify-between">
             <button
               onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 text-sm text-text-muted hover:text-accent transition-colors"
+              disabled={isBaselineLocked}
+              className="flex items-center gap-1.5 text-sm text-text-muted hover:text-accent transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <span>＋</span> Aggiungi risorsa
             </button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-accent hover:bg-accent/90 disabled:opacity-50 text-white transition-all"
-            >
-              {saving ? 'Salvataggio…' : saved ? '✓ Salvato' : 'Salva fase'}
-            </button>
+            {isBaselineLocked ? (
+              <span className="text-xs text-rag-yellow">🔒 Baseline bloccata — allocazioni in sola lettura</span>
+            ) : (
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-accent hover:bg-accent/90 disabled:opacity-50 text-white transition-all"
+              >
+                {saving ? 'Salvataggio…' : saved ? '✓ Salvato' : 'Salva fase'}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -286,10 +293,17 @@ export default function Allocation() {
   const [data, setData] = useState<AllocationData | null>(null);
   const [loading, setLoading] = useState(true);
   const [crossTotals, setCrossTotals] = useState<Record<string, number>>({});
+  const [isBaselineLocked, setIsBaselineLocked] = useState(false);
 
   const load = useCallback(() => {
     if (!projectId) return;
-    fetchAllocation(projectId).then(setData).finally(() => setLoading(false));
+    Promise.all([
+      fetchAllocation(projectId),
+      fetchBaseline(projectId),
+    ]).then(([alloc, baseline]) => {
+      setData(alloc);
+      setIsBaselineLocked(baseline.is_locked);
+    }).finally(() => setLoading(false));
   }, [projectId]);
 
   const loadCrossTotals = useCallback(() => {
@@ -337,6 +351,12 @@ export default function Allocation() {
           <span>✅ Ottimale 0.8–1.0 FTE</span>
         </div>
 
+        {isBaselineLocked && (
+          <div className="bg-rag-yellow/10 border border-rag-yellow/30 rounded-xl px-5 py-3 text-rag-yellow text-sm">
+            🔒 La baseline è bloccata. Le allocazioni sono in sola lettura.
+          </div>
+        )}
+
         {data?.phases.map((phase) => (
           <PhaseBlock
             key={phase.phase_id}
@@ -344,6 +364,7 @@ export default function Allocation() {
             projectId={projectId!}
             allResources={data.all_resources}
             crossTotals={crossTotals}
+            isBaselineLocked={isBaselineLocked}
             onSaved={handleSaved}
           />
         ))}
