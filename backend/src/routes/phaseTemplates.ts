@@ -26,12 +26,18 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'order must be a number' });
   }
   try {
-    // Use a sanitised slug as the internal name key
+    const existing = await query(
+      'SELECT id FROM "PhaseTemplate" WHERE LOWER(display_name) = LOWER($1)',
+      [display_name.trim()],
+    );
+    if (existing.rowCount) {
+      return res.status(409).json({ error: `Esiste già una fase con nome "${display_name.trim()}"` });
+    }
     const name = `custom_${Date.now()}`;
     const result = await query(
-      `INSERT INTO "PhaseTemplate" (name, display_name, "order")
-       VALUES ($1, $2, $3) RETURNING *`,
-      [name, display_name.trim(), parseInt(order, 10)],
+      `INSERT INTO "PhaseTemplate" (name, display_name, "order", default_contingency_pct)
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [name, display_name.trim(), parseInt(order, 10), parseFloat(req.body.default_contingency_pct) || 0],
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {

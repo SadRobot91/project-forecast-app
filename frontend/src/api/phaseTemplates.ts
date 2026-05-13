@@ -39,15 +39,19 @@ export async function updatePhaseTemplate(
 export async function createPhaseTemplate(
   display_name: string,
   order: number,
+  default_contingency_pct = 0,
 ): Promise<PhaseTemplate> {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 300));
+    if (MOCK_TEMPLATES.some((t) => t.display_name.toLowerCase() === display_name.trim().toLowerCase())) {
+      throw new Error(`Esiste già una fase con nome "${display_name.trim()}"`);
+    }
     const t: PhaseTemplate = {
       id: Date.now(),
       name: `custom_${Date.now()}`,
       display_name,
       order,
-      default_contingency_pct: 0,
+      default_contingency_pct,
       active: true,
     };
     MOCK_TEMPLATES.push(t);
@@ -55,7 +59,7 @@ export async function createPhaseTemplate(
   }
   return apiClient<PhaseTemplate>('/api/phase-templates', {
     method: 'POST',
-    body: JSON.stringify({ display_name, order }),
+    body: JSON.stringify({ display_name, order, default_contingency_pct }),
   });
 }
 

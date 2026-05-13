@@ -100,7 +100,15 @@ function PhaseBlock({ phase, projectId, allResources, crossTotals, isBaselineLoc
   const [cells, setCells] = useState<AllocationCell[]>(phase.cells);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty]);
 
   // BUG-06: sync local state when fresh data arrives from backend after save + reload
   useEffect(() => {
@@ -123,6 +131,7 @@ function PhaseBlock({ phase, projectId, allResources, crossTotals, isBaselineLoc
   }
 
   function updateCell(resourceId: number, weekStart: string, fte: number) {
+    setDirty(true);
     const dayRate = resources.find((r) => r.id === resourceId)?.day_rate ?? 0;
     setCells((prev) => {
       const existing = prev.find((c) => c.resource_id === resourceId && c.week_start === weekStart);
@@ -147,6 +156,7 @@ function PhaseBlock({ phase, projectId, allResources, crossTotals, isBaselineLoc
         fte: c.fte,
       }));
       await saveAllocationPhase(projectId, phase.phase_id, payload);
+      setDirty(false);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
       onSaved();
@@ -267,9 +277,9 @@ function PhaseBlock({ phase, projectId, allResources, crossTotals, isBaselineLoc
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-accent hover:bg-accent/90 disabled:opacity-50 text-white transition-all"
+                className={`px-4 py-1.5 rounded-lg text-sm font-semibold disabled:opacity-50 text-white transition-all ${dirty ? 'bg-rag-yellow/80 hover:bg-rag-yellow' : 'bg-accent hover:bg-accent/90'}`}
               >
-                {saving ? 'Salvataggio…' : saved ? '✓ Salvato' : 'Salva fase'}
+                {saving ? 'Salvataggio…' : saved ? '✓ Salvato' : dirty ? '● Salva fase' : 'Salva fase'}
               </button>
             )}
           </div>
