@@ -141,11 +141,56 @@ export default function Dashboard() {
   const { kpis, phase_budgets, milestones } = data;
   const totalBudget = phase_budgets.reduce((s, r) => s + r.budget, 0);
 
+  // Contextual state detection
+  const hasBudget   = totalBudget > 0;
+  const hasSnapshot = !!kpis.last_sync_at;
+
   const ragBannerClass: Record<string, string> = {
     IN_LINEA:     'from-rag-green/20 to-rag-green/5 border-rag-green/30',
     A_RISCHIO:    'from-rag-yellow/20 to-rag-yellow/5 border-rag-yellow/30',
     FUORI_BUDGET: 'from-rag-red/20 to-rag-red/5 border-rag-red/30',
   };
+
+  // ─── State A: no budget configured ───────────────────────────────────────
+  if (!hasBudget) {
+    return (
+      <div className="min-h-screen bg-base text-text-primary">
+        <AppNav projectId={id} projectName={data.project_name} />
+        <main className="max-w-3xl mx-auto px-6 py-12 space-y-8">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">{data.project_name}</h1>
+            <p className="text-text-muted text-sm mt-1">Il progetto non è ancora pianificato. Completa la configurazione per vedere la dashboard.</p>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <button
+              onClick={() => navigate(`/projects/${id}/pianificazione`)}
+              className="bg-surface border border-accent/30 rounded-2xl p-6 text-left hover:border-accent/60 hover:bg-surface-2 transition-all shadow-card group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-accent/15 flex items-center justify-center mb-4">
+                <svg className="w-5 h-5 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <p className="font-semibold text-text-primary group-hover:text-accent transition-colors">1. Pianificazione</p>
+              <p className="text-text-muted text-sm mt-1">Definisci fasi, date e alloca le risorse per calcolare il budget.</p>
+            </button>
+            <button
+              onClick={() => navigate(`/projects/${id}/gantt`)}
+              className="bg-surface border border-border rounded-2xl p-6 text-left hover:border-accent/40 hover:bg-surface-2 transition-all shadow-card group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-surface-2 flex items-center justify-center mb-4">
+                <svg className="w-5 h-5 text-text-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+              </div>
+              <p className="font-semibold text-text-primary group-hover:text-accent transition-colors">2. Gantt</p>
+              <p className="text-text-muted text-sm mt-1">Aggiungi task e milestone per il piano di progetto visuale.</p>
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-base text-text-primary">
@@ -161,6 +206,21 @@ export default function Dashboard() {
           </div>
           <RAGBadge status={kpis.rag_status} size="md" />
         </div>
+
+        {/* State B: budget configured but no snapshot yet */}
+        {!hasSnapshot && (
+          <div className="bg-surface-2 border border-border rounded-xl px-5 py-3 flex items-center justify-between gap-4">
+            <p className="text-text-muted text-sm">
+              Il budget è configurato. Inserisci il primo snapshot in <strong>Avanzamento</strong> per attivare i KPI di costo e previsione.
+            </p>
+            <button
+              onClick={() => navigate(`/projects/${id}/avanzamento`)}
+              className="flex-shrink-0 text-xs text-accent hover:text-accent/80 border border-accent/30 rounded-lg px-3 py-1.5 hover:bg-accent/10 transition-colors"
+            >
+              Vai ad Avanzamento →
+            </button>
+          </div>
+        )}
 
         {/* KPI Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -201,49 +261,59 @@ export default function Dashboard() {
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-base">Ultimo Aggiornamento Ongoing</h2>
+              <h2 className="font-semibold text-base">Avanzamento</h2>
               <button
-                onClick={() => navigate(`/projects/${id}/ongoing`)}
+                onClick={() => navigate(`/projects/${id}/avanzamento`)}
                 className="text-xs text-accent hover:text-accent/80 border border-accent/30 rounded-lg px-3 py-1.5 hover:bg-accent/10 transition-colors"
               >
-                Inserimento Manuale
+                {hasSnapshot ? 'Inserimento Manuale' : 'Inserisci primo snapshot →'}
               </button>
             </div>
             <div className="bg-surface border border-border rounded-2xl p-5 shadow-card space-y-3">
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${kpis.last_sync_at ? 'bg-rag-green' : 'bg-text-dim'}`} />
-                <span className="text-sm font-medium text-text-primary">
-                  {kpis.last_sync_source === 'keyedin_api' ? 'Keyedin API' : kpis.last_sync_at ? 'Inserimento Manuale' : 'Nessun dato'}
-                </span>
-              </div>
-              {kpis.last_sync_at ? (
-                <p className="text-text-muted text-sm">
-                  {new Date(kpis.last_sync_at).toLocaleString('it-IT', {
-                    day: '2-digit', month: '2-digit', year: 'numeric',
-                    hour: '2-digit', minute: '2-digit',
-                  })}
-                </p>
+              {!hasSnapshot ? (
+                <div className="text-center py-4 space-y-2">
+                  <div className="w-8 h-8 rounded-full bg-surface-2 flex items-center justify-center mx-auto">
+                    <svg className="w-4 h-4 text-text-dim" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <p className="text-text-muted text-sm">Nessuno snapshot registrato.</p>
+                  <p className="text-text-dim text-xs">Vai in Avanzamento per inserire costi e ore a consuntivo.</p>
+                </div>
               ) : (
-                <p className="text-text-dim text-sm">Nessun dato disponibile</p>
+                <>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-rag-green" />
+                    <span className="text-sm font-medium text-text-primary">
+                      {kpis.last_sync_source === 'keyedin_api' ? 'Keyedin API' : 'Inserimento Manuale'}
+                    </span>
+                  </div>
+                  <p className="text-text-muted text-sm">
+                    {new Date(kpis.last_sync_at!).toLocaleString('it-IT', {
+                      day: '2-digit', month: '2-digit', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit',
+                    })}
+                  </p>
+                  <div className="pt-1 border-t border-border space-y-1 text-xs text-text-muted">
+                    <div className="flex justify-between">
+                      <span>Ore spese</span>
+                      <span className="text-text-primary font-medium">
+                        {kpis.hours_spent_to_date > 0 ? `${kpis.hours_spent_to_date}h` : '—'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Costo speso</span>
+                      <span className="text-text-primary font-medium">{fmt(kpis.cost_spent)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Giorni usati</span>
+                      <span className="text-text-primary font-medium">
+                        {kpis.working_days_used > 0 ? kpis.working_days_used : '—'}
+                      </span>
+                    </div>
+                  </div>
+                </>
               )}
-              <div className="pt-1 border-t border-border space-y-1 text-xs text-text-muted">
-                <div className="flex justify-between">
-                  <span>Ore spese</span>
-                  <span className="text-text-primary font-medium">
-                    {kpis.hours_spent_to_date > 0 ? `${kpis.hours_spent_to_date}h` : '—'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Costo speso</span>
-                  <span className="text-text-primary font-medium">{fmt(kpis.cost_spent)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Giorni usati</span>
-                  <span className="text-text-primary font-medium">
-                    {kpis.working_days_used > 0 ? kpis.working_days_used : '—'}
-                  </span>
-                </div>
-              </div>
             </div>
           </div>
         </div>

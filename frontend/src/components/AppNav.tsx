@@ -17,11 +17,10 @@ export default function AppNav({ projectId, projectName }: Props) {
   const navigate = useNavigate();
 
   const projectLinks: NavItem[] = projectId ? [
-    { label: 'Dashboard',  to: `/projects/${projectId}/dashboard` },
-    { label: 'Baseline',   to: `/projects/${projectId}/baseline` },
-    { label: 'Allocation', to: `/projects/${projectId}/allocation` },
-    { label: 'Gantt',      to: `/projects/${projectId}/gantt` },
-    { label: 'Ongoing',    to: `/projects/${projectId}/ongoing` },
+    { label: 'Dashboard',      to: `/projects/${projectId}/dashboard` },
+    { label: 'Pianificazione', to: `/projects/${projectId}/pianificazione` },
+    { label: 'Gantt',          to: `/projects/${projectId}/gantt` },
+    { label: 'Avanzamento',    to: `/projects/${projectId}/avanzamento` },
   ] : [];
 
   const globalLinks: NavItem[] = [
