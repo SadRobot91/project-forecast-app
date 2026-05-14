@@ -9,6 +9,7 @@ import ganttRouter from './routes/gantt';
 import projectsRouter from './routes/projects';
 import dashboardRouter from './routes/dashboard';
 import phaseTemplatesRouter from './routes/phaseTemplates';
+import authRouter from './routes/auth';
 
 dotenv.config();
 
@@ -17,6 +18,7 @@ const port = process.env.PORT || 3000;
 
 app.use(express.json());
 
+app.use('/api/auth', authRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/resources', resourcesRouter);
 app.use('/api/projects/:id/dashboard', dashboardRouter);

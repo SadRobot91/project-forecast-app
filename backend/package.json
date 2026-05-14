@@ -8,9 +8,12 @@
     "dev": "nodemon src/index.ts",
     "build": "tsc",
     "test": "jest --runInBand",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "seed": "ts-node src/db/seed.ts",
+    "migrate": "ts-node src/db/migrate.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.4",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "pg": "^8.11.5"
