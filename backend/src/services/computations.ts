@@ -91,7 +91,7 @@ export function calculateRAGStatus(forecast: number, baseline: number): RAGStatu
   if (baseline <= 0 && forecast > 0) return RAGStatus.FUORI_BUDGET;
   if (baseline <= 0) return RAGStatus.IN_LINEA;
 
-  const ratio = forecast / baseline;
+  const ratio = Number((forecast / baseline).toFixed(4));
   
   if (ratio <= 1.05) {
     return RAGStatus.IN_LINEA;
