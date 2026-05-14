@@ -1,0 +1,13 @@
+{
+  "name": "project-forecast-app",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "nx run-many --target=dev",
+    "build": "nx run-many --target=build",
+    "test": "nx run-many --target=test"
+  },
+  "devDependencies": {
+    "nx": "22.7.1"
+  }
+}
