@@ -1,6 +1,6 @@
 -- Migration 003: Ongoing Snapshot
 
-CREATE TABLE "OngoingSnapshot" (
+CREATE TABLE IF NOT EXISTS "OngoingSnapshot" (
     id SERIAL PRIMARY KEY,
     project_id INTEGER REFERENCES "Project"(id) ON DELETE CASCADE,
     reporting_date DATE NOT NULL,

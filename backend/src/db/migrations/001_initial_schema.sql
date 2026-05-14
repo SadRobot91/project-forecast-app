@@ -1,6 +1,6 @@
 -- Initial Database Schema for Project Forecast App
 
-CREATE TABLE "User" (
+CREATE TABLE IF NOT EXISTS "User" (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -9,7 +9,7 @@ CREATE TABLE "User" (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE "Project" (
+CREATE TABLE IF NOT EXISTS "Project" (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     pm_id INTEGER REFERENCES "User"(id),
@@ -22,7 +22,7 @@ CREATE TABLE "Project" (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE "ProjectPhase" (
+CREATE TABLE IF NOT EXISTS "ProjectPhase" (
     id SERIAL PRIMARY KEY,
     project_id INTEGER REFERENCES "Project"(id) ON DELETE CASCADE,
     phase_type VARCHAR(50) CHECK (phase_type IN ('feasibility', 'planning_design', 'build', 'deployment', 'closure')) NOT NULL,

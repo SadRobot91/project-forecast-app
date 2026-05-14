@@ -2,8 +2,9 @@
 
 BEGIN;
 
--- Add display_name to ProjectPhase; backfill from phase_type
+-- Add display_name and contingency_pct to ProjectPhase; backfill from phase_type
 ALTER TABLE "ProjectPhase" ADD COLUMN IF NOT EXISTS display_name VARCHAR(255);
+ALTER TABLE "ProjectPhase" ADD COLUMN IF NOT EXISTS contingency_pct DECIMAL(5, 2) NOT NULL DEFAULT 0;
 
 UPDATE "ProjectPhase" SET display_name = CASE phase_type
   WHEN 'feasibility'     THEN 'Feasibility'

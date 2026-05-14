@@ -5,7 +5,12 @@
   "scripts": {
     "dev": "nx run-many --target=dev",
     "build": "nx run-many --target=build",
-    "test": "nx run-many --target=test"
+    "test": "nx run-many --target=test",
+    "db:up": "docker-compose up -d",
+    "db:down": "docker-compose down",
+    "db:logs": "docker-compose logs -f",
+    "migrate": "pnpm --filter project-forecast-backend migrate",
+    "seed": "pnpm --filter project-forecast-backend seed"
   },
   "devDependencies": {
     "nx": "22.7.1"

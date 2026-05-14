@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   db:
-    image: postgres:15-alpine
+    image: postgres:16
     environment:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
@@ -11,64 +11,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
-  backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    ports:
-      - "3000:3000"
-    env_file:
-      - backend/.env
-    volumes:
-      - ./backend:/app/backend
-      - /app/backend/node_modules
-    environment:
-      - NODE_ENV=development
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/project_forecast
-    depends_on:
-      - db
-
-  frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-    ports:
-      - "5173:5173"
-    env_file:
-      - frontend/.env.local
-    volumes:
-      - ./frontend:/app/frontend
-      - /app/frontend/node_modules
-    environment:
-      - VITE_API_URL=http://localhost:3000
-    depends_on:
-      - backend
-
-  seed:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    env_file:
-      - backend/.env
-    command: ["pnpm", "seed"]
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/project_forecast
-    depends_on:
-      - db
-      - backend
-
-  migrate:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-    env_file:
-      - backend/.env
-    command: ["pnpm", "migrate"]
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@db:5432/project_forecast
-    depends_on:
-      - db
 
 volumes:
   postgres_data:
