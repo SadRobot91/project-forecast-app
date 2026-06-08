@@ -5,7 +5,10 @@
 
 // ── Mock the DB module ────────────────────────────────────────────────────────
 const mockQuery = jest.fn();
-jest.mock('../db', () => ({ query: (...args: any[]) => mockQuery(...args) }));
+jest.mock('../db', () => ({
+  query: (...args: any[]) => mockQuery(...args),
+  withTransaction: async (fn: (q: any) => Promise<any>) => fn((...args: any[]) => mockQuery(...args)),
+}));
 
 // ── Mock computations (only where routes use them) ────────────────────────────
 jest.mock('../services/computations', () => ({
@@ -21,7 +24,7 @@ const mockGetRegistryAggregate = jest.fn();
 jest.mock('../services/allocationAggregator', () => ({
   getWeeklyTotal:        (...args: any[]) => mockGetWeeklyTotal(...args),
   getRegistryAggregate:  (...args: any[]) => mockGetRegistryAggregate(...args),
-  canAllocate:           jest.fn(),
+  canAllocate:           jest.fn().mockResolvedValue({ ok: true, excess: 0, breakdown: {} }),
 }));
 
 import express from 'express';
@@ -162,13 +165,13 @@ describe('PUT /api/projects/:id/allocation', () => {
   });
 
   it('saves with week_start (not month) in INSERT', async () => {
-    mockQuery.mockResolvedValue(dbOk([])); // BEGIN, DELETE, COMMIT
-    mockQuery.mockResolvedValueOnce(dbOk([])); // BEGIN
+    // withTransaction calls fn(mockQuery) directly — no BEGIN/COMMIT through mockQuery
+    mockQuery.mockResolvedValueOnce(dbOk([])); // pg_advisory_xact_lock
     mockQuery.mockResolvedValueOnce(dbOk([])); // DELETE
-    mockQuery.mockResolvedValueOnce(dbOk([{ planned_start: new Date('2026-03-02'), planned_end: new Date('2026-06-19') }])); // phase
-    mockQuery.mockResolvedValueOnce(dbOk([{ day_rate: '600' }])); // resource day_rate
+    // canAllocate is mocked separately — no mockQuery call
+    mockQuery.mockResolvedValueOnce(dbOk([{ day_rate: '600' }])); // SELECT day_rate (resource first)
+    mockQuery.mockResolvedValueOnce(dbOk([{ planned_start: new Date('2026-03-02'), planned_end: new Date('2026-06-19') }])); // calculatePhaseWeekWorkingDays
     mockQuery.mockResolvedValueOnce(dbOk([{ id: 1, resource_id: 2, project_id: 1, phase_id: 1, week_start: '2026-03-02', fte: 0.8, working_days: 5, weekly_cost: 2400 }])); // INSERT RETURNING
-    mockQuery.mockResolvedValueOnce(dbOk([])); // COMMIT
 
     const res = await request(app)
       .put('/api/projects/1/allocation')
@@ -187,12 +190,12 @@ describe('PUT /api/projects/:id/allocation', () => {
   // Step B: AllocationEntry is the working copy and stays mutable after
   // baseline lock. The BAC is preserved as a snapshot on the Baseline row.
   it('allows updates even when baseline is locked (working copy)', async () => {
-    mockQuery.mockResolvedValueOnce(dbOk([])); // BEGIN
+    mockQuery.mockResolvedValueOnce(dbOk([])); // pg_advisory_xact_lock
     mockQuery.mockResolvedValueOnce(dbOk([])); // DELETE
-    mockQuery.mockResolvedValueOnce(dbOk([{ planned_start: new Date('2026-03-02'), planned_end: new Date('2026-06-19') }]));
-    mockQuery.mockResolvedValueOnce(dbOk([{ day_rate: '600' }]));
-    mockQuery.mockResolvedValueOnce(dbOk([{ id: 1, resource_id: 2, project_id: 1, phase_id: 1, week_start: '2026-03-09', fte: 0.5, working_days: 5, weekly_cost: 1500 }]));
-    mockQuery.mockResolvedValueOnce(dbOk([])); // COMMIT
+    // canAllocate mocked separately
+    mockQuery.mockResolvedValueOnce(dbOk([{ day_rate: '600' }])); // SELECT day_rate
+    mockQuery.mockResolvedValueOnce(dbOk([{ planned_start: new Date('2026-03-02'), planned_end: new Date('2026-06-19') }])); // calculatePhaseWeekWorkingDays
+    mockQuery.mockResolvedValueOnce(dbOk([{ id: 1, resource_id: 2, project_id: 1, phase_id: 1, week_start: '2026-03-09', fte: 0.5, working_days: 5, weekly_cost: 1500 }])); // INSERT
 
     const res = await request(app)
       .put('/api/projects/1/allocation')
@@ -243,7 +246,11 @@ describe('GET /api/resources/registry', () => {
   // protected by the snapshot, not by blocking day_rate changes.
   describe('PUT /api/resources/:id', () => {
     it('updates day_rate even when resource is allocated on a locked baseline', async () => {
-      mockQuery.mockResolvedValueOnce(dbOk([{ id: 2, name: 'Vishal', role: 'Dev', day_rate: '700' }]));
+      // resources.ts uses manual BEGIN/COMMIT + Step G cascade query
+      mockQuery.mockResolvedValueOnce(dbOk([])); // BEGIN
+      mockQuery.mockResolvedValueOnce(dbOk([{ id: 2, name: 'Vishal', role: 'Dev', day_rate: '700' }])); // UPDATE Resource RETURNING
+      mockQuery.mockResolvedValueOnce(dbOk([], 0)); // UPDATE AllocationEntry (Step G cascade)
+      mockQuery.mockResolvedValueOnce(dbOk([])); // COMMIT
 
       const res = await request(app)
         .put('/api/resources/2')
