@@ -3,17 +3,34 @@ import { useNavigate } from 'react-router-dom';
 import { login } from '../api/auth';
 import { useAuth } from '../contexts/AuthContext';
 
+interface FieldErrors {
+  email?: string;
+  password?: string;
+}
+
 export default function Login() {
   const navigate = useNavigate();
   const { setAuth } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+
+    const errors: FieldErrors = {};
+    if (!email.trim()) errors.email = "Inserisci l'indirizzo email";
+    if (!password) errors.password = 'Inserisci la password';
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
+
     setLoading(true);
     try {
       const res = await login(email, password);
@@ -63,12 +80,18 @@ export default function Login() {
               id="email"
               type="email"
               autoComplete="email"
-              required
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: undefined }));
+              }}
+              onInvalid={(e) => e.preventDefault()}
               placeholder="giuseppe@company.com"
               className="w-full bg-base border border-border text-text-primary placeholder-text-dim rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
             />
+            {fieldErrors.email && (
+              <p className="text-rag-red text-sm mt-1">{fieldErrors.email}</p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -79,12 +102,18 @@ export default function Login() {
               id="password"
               type="password"
               autoComplete="current-password"
-              required
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: undefined }));
+              }}
+              onInvalid={(e) => e.preventDefault()}
               placeholder="••••••••"
               className="w-full bg-base border border-border text-text-primary placeholder-text-dim rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
             />
+            {fieldErrors.password && (
+              <p className="text-rag-red text-sm mt-1">{fieldErrors.password}</p>
+            )}
           </div>
 
           <button
