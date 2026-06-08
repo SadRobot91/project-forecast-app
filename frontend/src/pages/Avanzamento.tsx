@@ -4,7 +4,7 @@ import AppNav from '../components/AppNav';
 import DateInput from '../components/DateInput';
 import ConfirmModal from '../components/ConfirmModal';
 import { fetchOngoing, fetchOngoingHistory, saveOngoing, deleteSnapshot, syncKeyedin } from '../api/ongoing';
-import type { OngoingData, OngoingSnapshot } from '../types';
+import type { OngoingData, OngoingSnapshot, OngoingPhaseOption } from '../types';
 
 function fmt(n: number) {
   return `£${Math.round(n).toLocaleString('en-GB')}`;
@@ -55,6 +55,7 @@ export default function Ongoing() {
   const [history, setHistory] = useState<OngoingSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm]       = useState(getEmptyForm);
+  const [selectedPhaseId, setSelectedPhaseId] = useState<number | null>(null);
   const [saving, setSaving]         = useState(false);
   const [saved, setSaved]           = useState(false);
   const [syncing, setSyncing]       = useState(false);
@@ -63,11 +64,12 @@ export default function Ongoing() {
   const [deleteTarget, setDeleteTarget]       = useState<OngoingSnapshot | null>(null);
   const [deleting, setDeleting]               = useState(false);
 
-  const load = useCallback(() => {
+  const load = useCallback((phaseId?: number | null) => {
     if (!projectId) return;
+    const pid = phaseId !== undefined ? phaseId : selectedPhaseId;
     Promise.all([
-      fetchOngoing(projectId),
-      fetchOngoingHistory(projectId),
+      fetchOngoing(projectId, pid),
+      fetchOngoingHistory(projectId, pid),
     ]).then(([d, h]) => {
       setData(d);
       setHistory(h);
@@ -81,7 +83,7 @@ export default function Ongoing() {
         });
       }
     }).finally(() => setLoading(false));
-  }, [projectId]);
+  }, [projectId, selectedPhaseId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -116,6 +118,7 @@ export default function Ongoing() {
         hours_spent_to_date:    hours,
         working_days_used:      wdUsed,
         working_days_remaining: isNaN(wdRem) ? 0 : wdRem,
+        phase_id:               selectedPhaseId,
       });
       load();
       setSaved(true);
@@ -154,6 +157,14 @@ export default function Ongoing() {
     } finally {
       setSyncing(false);
     }
+  }
+
+  const phases: OngoingPhaseOption[] = data?.phases ?? [];
+
+  function phaseLabel(phaseId: number | null): string {
+    if (phaseId === null) return 'Progetto';
+    const found = phases.find((p) => p.id === phaseId);
+    return found ? found.display_name : `Fase ${phaseId}`;
   }
 
   // Derived metrics from latest snapshot + baseline context
@@ -293,6 +304,23 @@ export default function Ongoing() {
 
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2">
+                <label className="block text-xs text-text-muted mb-1">Riferito a</label>
+                <select
+                  value={selectedPhaseId ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                    setSelectedPhaseId(val);
+                    load(val);
+                  }}
+                  className="w-full bg-base border border-border text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
+                >
+                  <option value="">Progetto (aggregato)</option>
+                  {phases.map((p) => (
+                    <option key={p.id} value={p.id}>{p.display_name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="col-span-2">
                 <label className="block text-xs text-text-muted mb-1">Data di riferimento *</label>
                 <DateInput
                   value={form.reporting_date}
@@ -387,13 +415,18 @@ export default function Ongoing() {
                     </div>
                     <div className="text-right flex-shrink-0 ml-3 flex items-start gap-2">
                       <div>
-                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                          s.source === 'keyedin_api'
-                            ? 'bg-accent/15 text-accent'
-                            : 'bg-surface-2 text-text-muted'
-                        }`}>
-                          {s.source === 'keyedin_api' ? 'Keyedin' : 'Manuale'}
-                        </span>
+                        <div className="flex items-center justify-end gap-1 flex-wrap">
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                            s.source === 'keyedin_api'
+                              ? 'bg-accent/15 text-accent'
+                              : 'bg-surface-2 text-text-muted'
+                          }`}>
+                            {s.source === 'keyedin_api' ? 'Keyedin' : 'Manuale'}
+                          </span>
+                          <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-surface-2 text-text-dim">
+                            {phaseLabel(s.phase_id)}
+                          </span>
+                        </div>
                         <p className="text-xs text-text-dim mt-1">{fmtDateTime(s.created_at)}</p>
                       </div>
                       {withinDeletionWindow(s) && (

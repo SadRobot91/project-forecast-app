@@ -191,9 +191,17 @@ export interface ResourceRegistryFilters {
 
 // ─── Ongoing ─────────────────────────────────
 
+export interface OngoingPhaseOption {
+  id: number;
+  display_name: string;
+  phase_type: string;
+  order: number;
+}
+
 export interface OngoingSnapshot {
   id: number;
   project_id: number;
+  phase_id: number | null;
   reporting_date: string;
   hours_spent_to_date: number;
   cost_spent_to_date: number;
@@ -208,6 +216,7 @@ export interface OngoingData {
   budget_total: number;
   total_working_days: number;
   snapshot: OngoingSnapshot | null;
+  phases: OngoingPhaseOption[];
 }
 
 export interface OngoingPayload {
@@ -216,6 +225,7 @@ export interface OngoingPayload {
   hours_spent_to_date: number;
   working_days_used: number;
   working_days_remaining: number;
+  phase_id?: number | null;
 }
 
 // ─── Gantt ────────────────────────────────────

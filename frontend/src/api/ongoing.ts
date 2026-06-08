@@ -4,20 +4,22 @@ import { MOCK_ONGOING, MOCK_ONGOING_HISTORY, MOCK_ONGOING_SNAPSHOT } from '../mo
 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
-export async function fetchOngoing(projectId: string): Promise<OngoingData> {
+export async function fetchOngoing(projectId: string, phaseId?: number | null): Promise<OngoingData> {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 300));
     return MOCK_ONGOING;
   }
-  return apiClient<OngoingData>(`/api/projects/${projectId}/ongoing`);
+  const qs = phaseId !== undefined ? `?phase_id=${phaseId ?? ''}` : '';
+  return apiClient<OngoingData>(`/api/projects/${projectId}/ongoing${qs}`);
 }
 
-export async function fetchOngoingHistory(projectId: string): Promise<OngoingSnapshot[]> {
+export async function fetchOngoingHistory(projectId: string, phaseId?: number | null): Promise<OngoingSnapshot[]> {
   if (USE_MOCK) {
     await new Promise((r) => setTimeout(r, 200));
     return MOCK_ONGOING_HISTORY;
   }
-  return apiClient<OngoingSnapshot[]>(`/api/projects/${projectId}/ongoing/history`);
+  const qs = phaseId !== undefined ? `?phase_id=${phaseId ?? ''}` : '';
+  return apiClient<OngoingSnapshot[]>(`/api/projects/${projectId}/ongoing/history${qs}`);
 }
 
 export async function saveOngoing(projectId: string, payload: OngoingPayload): Promise<OngoingSnapshot> {
@@ -26,6 +28,7 @@ export async function saveOngoing(projectId: string, payload: OngoingPayload): P
     const saved: OngoingSnapshot = {
       ...MOCK_ONGOING_SNAPSHOT,
       ...payload,
+      phase_id: payload.phase_id ?? null,
       id: Date.now(),
       project_id: parseInt(projectId, 10),
       source: 'manual',

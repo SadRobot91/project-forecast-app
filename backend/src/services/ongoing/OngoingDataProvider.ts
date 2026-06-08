@@ -1,6 +1,7 @@
 export interface SnapshotData {
   id?: number;
   project_id: number;
+  phase_id?: number | null;
   reporting_date: Date | string;
   hours_spent_to_date: number;
   cost_spent_to_date: number;
@@ -11,8 +12,8 @@ export interface SnapshotData {
 }
 
 export interface OngoingDataProvider {
-  getLatestSnapshot(projectId: string): Promise<SnapshotData | null>;
-  getHistory(projectId: string): Promise<SnapshotData[]>;
+  getLatestSnapshot(projectId: string, phaseId?: number | null): Promise<SnapshotData | null>;
+  getHistory(projectId: string, phaseId?: number | null): Promise<SnapshotData[]>;
   saveSnapshot(data: SnapshotData): Promise<SnapshotData>;
   syncData(projectId: string): Promise<SnapshotData>;
 }
