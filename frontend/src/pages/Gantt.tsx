@@ -357,7 +357,7 @@ function PhasesView({ phases, projectStart, totalWidth, weeks }: {
               <p className="text-xs text-text-dim">{fmtShort(phase.planned_start)} → {fmtShort(phase.planned_end)}</p>
             </div>
           </div>
-          <div className="relative bg-surface" style={{ width: totalWidth, height: ROW_PX }}>
+          <div className="relative flex-shrink-0 bg-surface" style={{ width: totalWidth, height: ROW_PX }}>
             <WeekGrid weeks={weeks} totalWidth={totalWidth} projectStart={projectStart} />
             <PhaseBar phase={phase} projectStart={projectStart} />
             {phase.tasks.filter((t) => t.is_milestone).map((t) => (
@@ -399,7 +399,7 @@ function FullView({ phases, projectStart, totalWidth, weeks, collapsed, onToggle
                   <p className="text-xs text-text-dim">{phase.tasks.length} task</p>
                 </div>
               </div>
-              <div className="relative bg-surface-2" style={{ width: totalWidth, height: ROW_PX }}>
+              <div className="relative flex-shrink-0 bg-surface-2" style={{ width: totalWidth, height: ROW_PX }}>
                 <WeekGrid weeks={weeks} totalWidth={totalWidth} projectStart={projectStart} />
                 <PhaseBar phase={phase} projectStart={projectStart} />
               </div>
@@ -437,7 +437,7 @@ function FullView({ phases, projectStart, totalWidth, weeks, collapsed, onToggle
                         />
                       )}
                     </div>
-                    <div className="relative bg-surface" style={{ width: totalWidth, height: ROW_PX }}>
+                    <div className="relative flex-shrink-0 bg-surface" style={{ width: totalWidth, height: ROW_PX }}>
                       <WeekGrid weeks={weeks} totalWidth={totalWidth} projectStart={projectStart} />
                       <TaskBar task={task} projectStart={projectStart} />
                       {task.is_milestone && task.actual_date && (
@@ -464,7 +464,7 @@ function FullView({ phases, projectStart, totalWidth, weeks, collapsed, onToggle
                     <span className="text-sm">＋</span>
                     <span className="text-xs">Aggiungi task</span>
                   </div>
-                  <div className="flex-1" style={{ width: totalWidth }} />
+                  <div className="flex-shrink-0" style={{ width: totalWidth }} />
                 </div>
               </>
             )}
@@ -515,7 +515,7 @@ function MilestoneView({ phases, projectStart, totalWidth, weeks, onUpdateMilest
               className="w-24 flex-shrink-0 text-xs bg-base border border-border rounded px-1 py-0.5 text-text-muted focus:outline-none focus:border-accent"
             />
           </div>
-          <div className="relative bg-surface" style={{ width: totalWidth, height: ROW_PX }}>
+          <div className="relative flex-shrink-0 bg-surface" style={{ width: totalWidth, height: ROW_PX }}>
             <WeekGrid weeks={weeks} totalWidth={totalWidth} projectStart={projectStart} />
             <div
               className="absolute top-1/2 -translate-y-1/2 text-orange-400 text-base select-none z-10"
@@ -672,7 +672,7 @@ export default function Gantt() {
                 <div className="sticky left-0 z-40 bg-surface-2 border-r border-border flex items-center px-4 flex-shrink-0" style={{ width: LABEL_W }}>
                   <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">Fase / Task</span>
                 </div>
-                <div className="relative" style={{ width: totalWidth }}>
+                <div className="relative flex-shrink-0" style={{ width: totalWidth }}>
                   {weeks.map((w, i) => (
                     <div
                       key={w}
