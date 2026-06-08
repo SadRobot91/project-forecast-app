@@ -7,6 +7,8 @@ import BudgetBar from '../components/BudgetBar';
 import AppNav from '../components/AppNav';
 import { formatCurrency } from '../utils/formatCurrency';
 
+function fmtPct(n: number) { return (n * 100).toFixed(0) + '%'; }
+
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
@@ -25,48 +27,97 @@ function KPICard({ label, value, sub, accent }: { label: string; value: string; 
 
 function PhaseBudgetTable({ rows, total }: { rows: PhaseBudgetRow[]; total: number }) {
   return (
-    <div className="overflow-x-auto rounded-2xl border border-border">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border bg-surface-2">
-            {['Fase', 'Periodo', 'GG', 'Ore', 'Burn Rate/gg', 'Budget £', '% Totale'].map((h) => (
-              <th key={h} className="text-left text-text-muted font-medium px-4 py-3 text-xs uppercase tracking-wider whitespace-nowrap">
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={r.phase_id} className={`border-b border-border/50 hover:bg-surface-2/60 transition-colors ${i % 2 === 0 ? 'bg-surface' : 'bg-surface/50'}`}>
-              <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">{r.display_name ?? r.phase_type}</td>
-              <td className="px-4 py-3 text-text-muted whitespace-nowrap text-xs">
-                {fmtDate(r.planned_start)} → {fmtDate(r.planned_end)}
-              </td>
-              <td className="px-4 py-3 text-text-primary">{r.working_days}</td>
-              <td className="px-4 py-3 text-text-primary">{r.planned_hours}</td>
-              <td className="px-4 py-3 text-text-muted">{formatCurrency(r.burn_rate_per_day)}</td>
-              <td className="px-4 py-3 font-medium text-text-primary">{formatCurrency(r.budget)}</td>
-              <td className="px-4 py-3">
+    <>
+      {/* Mobile card view */}
+      <div className="block md:hidden space-y-3">
+        {rows.map((r) => (
+          <div key={r.phase_id} className="bg-surface border border-border rounded-2xl p-4 space-y-3">
+            <p className="font-semibold text-text-primary">{r.display_name ?? r.phase_type}</p>
+            <p className="text-text-dim text-xs">{fmtDate(r.planned_start)} → {fmtDate(r.planned_end)}</p>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div>
+                <p className="text-text-dim text-xs uppercase tracking-wider mb-0.5">Budget</p>
+                <p className="font-medium text-text-primary">{formatCurrency(r.budget)}</p>
+              </div>
+              <div>
+                <p className="text-text-dim text-xs uppercase tracking-wider mb-0.5">Burn Rate/gg</p>
+                <p className="text-text-muted">{formatCurrency(r.burn_rate_per_day)}</p>
+              </div>
+              <div>
+                <p className="text-text-dim text-xs uppercase tracking-wider mb-0.5">GG</p>
+                <p className="text-text-primary">{r.working_days}</p>
+              </div>
+              <div>
+                <p className="text-text-dim text-xs uppercase tracking-wider mb-0.5">% Totale</p>
                 <div className="flex items-center gap-2">
-                  <div className="w-16 h-1.5 bg-base rounded-full overflow-hidden">
+                  <div className="w-12 h-1.5 bg-base rounded-full overflow-hidden">
                     <div className="h-full bg-accent rounded-full" style={{ width: `${r.budget_pct_of_total}%` }} />
                   </div>
                   <span className="text-text-muted text-xs">{r.budget_pct_of_total.toFixed(1)}%</span>
                 </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-        <tfoot>
-          <tr className="border-t-2 border-border bg-surface-2">
-            <td colSpan={5} className="px-4 py-3 font-bold text-text-primary">TOTALE</td>
-            <td className="px-4 py-3 font-bold text-accent">{formatCurrency(total)}</td>
-            <td className="px-4 py-3 text-text-muted text-xs">100%</td>
-          </tr>
-        </tfoot>
-      </table>
-    </div>
+              </div>
+            </div>
+          </div>
+        ))}
+        <div className="bg-surface-2 border border-border rounded-2xl px-4 py-3 flex justify-between items-center">
+          <span className="font-bold text-text-primary">TOTALE</span>
+          <span className="font-bold text-accent">{formatCurrency(total)}</span>
+        </div>
+      </div>
+
+      {/* Desktop table view */}
+      <div className="hidden md:block relative rounded-2xl border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-surface-2">
+                <th className="sticky left-0 bg-surface-2 z-10 text-left text-text-muted font-medium px-4 py-3 text-xs uppercase tracking-wider whitespace-nowrap">
+                  Fase
+                </th>
+                {['Periodo', 'GG', 'Ore', 'Burn Rate/gg', 'Budget £', '% Totale'].map((h) => (
+                  <th key={h} className="text-left text-text-muted font-medium px-4 py-3 text-xs uppercase tracking-wider whitespace-nowrap">
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.phase_id} className={`border-b border-border/50 hover:bg-surface-2/60 transition-colors ${i % 2 === 0 ? 'bg-surface' : 'bg-surface/50'}`}>
+                  <td className={`sticky left-0 z-10 px-4 py-3 font-medium text-text-primary whitespace-nowrap ${i % 2 === 0 ? 'bg-surface' : 'bg-surface/50'}`}>
+                    {r.display_name ?? r.phase_type}
+                  </td>
+                  <td className="px-4 py-3 text-text-muted whitespace-nowrap text-xs">
+                    {fmtDate(r.planned_start)} → {fmtDate(r.planned_end)}
+                  </td>
+                  <td className="px-4 py-3 text-text-primary">{r.working_days}</td>
+                  <td className="px-4 py-3 text-text-primary">{r.planned_hours}</td>
+                  <td className="px-4 py-3 text-text-muted">{formatCurrency(r.burn_rate_per_day)}</td>
+                  <td className="px-4 py-3 font-medium text-text-primary">{formatCurrency(r.budget)}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-16 h-1.5 bg-base rounded-full overflow-hidden">
+                        <div className="h-full bg-accent rounded-full" style={{ width: `${r.budget_pct_of_total}%` }} />
+                      </div>
+                      <span className="text-text-muted text-xs">{r.budget_pct_of_total.toFixed(1)}%</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-border bg-surface-2">
+                <td className="sticky left-0 bg-surface-2 z-10 px-4 py-3 font-bold text-text-primary">TOTALE</td>
+                <td colSpan={4} className="px-4 py-3" />
+                <td className="px-4 py-3 font-bold text-accent">{formatCurrency(total)}</td>
+                <td className="px-4 py-3 text-text-muted text-xs">100%</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent" />
+      </div>
+    </>
   );
 }
 
@@ -104,10 +155,6 @@ function MilestoneTracker({ milestones }: { milestones: MilestoneItem[] }) {
       })}
     </div>
   );
-}
-
-function fmtPct(n: number) {
-  return `${Math.round(n * 100)}%`;
 }
 
 function PhaseFinancialsTable({ rows }: { rows: PhaseFinancial[] }) {
@@ -262,7 +309,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
           <KPICard label="Speso" value={formatCurrency(kpis.cost_spent)} sub={`${kpis.budget_pct}% del budget`} />
           <KPICard label="Budget" value={formatCurrency(kpis.budget_total)} />
-          <KPICard label="Previsione" value={formatCurrency(kpis.revised_forecast)} sub={`Scostamento: ${formatCurrency(kpis.variance)}`} />
+          <KPICard label="Previsione" value={formatCurrency(kpis.revised_forecast)} accent sub={`Scostamento: ${formatCurrency(kpis.variance)}`} />
           <KPICard label="Costo/gg" value={formatCurrency(kpis.daily_burn_rate)} sub="burn rate giornaliero" />
           <KPICard label="Scostamento" value={formatCurrency(kpis.variance)} sub={kpis.variance > 0 ? 'sopra budget' : 'sotto budget'} />
           <KPICard label="Giorni rimasti" value={`${kpis.days_remaining}`} sub="giorni lavorativi" />
@@ -291,7 +338,7 @@ export default function Dashboard() {
         {/* Phase financials detail */}
         {data.phase_financials && data.phase_financials.length > 0 && (
           <div className="space-y-3">
-            <h2 className="font-semibold text-base">Budget per Fase (dettaglio)</h2>
+            <h2 className="font-semibold text-base">Forecast per Fase (EAC)</h2>
             <PhaseFinancialsTable rows={data.phase_financials} />
           </div>
         )}
