@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { fetchDashboard } from '../api/projects';
-import type { DashboardData, PhaseBudgetRow, MilestoneItem } from '../types';
+import type { DashboardData, PhaseBudgetRow, MilestoneItem, PhaseFinancial } from '../types';
 import RAGBadge from '../components/RAGBadge';
 import BudgetBar from '../components/BudgetBar';
 import AppNav from '../components/AppNav';
@@ -105,6 +105,45 @@ function MilestoneTracker({ milestones }: { milestones: MilestoneItem[] }) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+function fmtPct(n: number) {
+  return `${Math.round(n * 100)}%`;
+}
+
+function PhaseFinancialsTable({ rows }: { rows: PhaseFinancial[] }) {
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-border">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-border bg-surface-2">
+            {['Fase', 'Budget', 'Speso', 'Forecast EAC', 'Variance', '% Complet.', 'RAG'].map((h) => (
+              <th key={h} className="text-left text-text-muted font-medium px-4 py-3 text-xs uppercase tracking-wider whitespace-nowrap">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={r.phase_id} className={`border-b border-border/50 hover:bg-surface-2/60 transition-colors ${i % 2 === 0 ? 'bg-surface' : 'bg-surface/50'}`}>
+              <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">{r.display_name}</td>
+              <td className="px-4 py-3 text-text-primary">{fmt(r.budget)}</td>
+              <td className="px-4 py-3 text-text-primary">{fmt(r.cost_spent)}</td>
+              <td className="px-4 py-3 font-medium text-text-primary">{fmt(r.revised_forecast)}</td>
+              <td className={`px-4 py-3 font-medium ${r.variance > 0 ? 'text-rag-red' : 'text-rag-green'}`}>
+                {r.variance > 0 ? '+' : ''}{fmt(r.variance)}
+              </td>
+              <td className="px-4 py-3 text-text-muted">{fmtPct(r.pct_complete)}</td>
+              <td className="px-4 py-3">
+                <RAGBadge status={r.rag_status} size="sm" />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -251,6 +290,14 @@ export default function Dashboard() {
           <h2 className="font-semibold text-base">Budget per Fase</h2>
           <PhaseBudgetTable rows={phase_budgets} total={totalBudget} />
         </div>
+
+        {/* Phase financials detail */}
+        {data.phase_financials && data.phase_financials.length > 0 && (
+          <div className="space-y-3">
+            <h2 className="font-semibold text-base">Budget per Fase (dettaglio)</h2>
+            <PhaseFinancialsTable rows={data.phase_financials} />
+          </div>
+        )}
 
         {/* Bottom row: Milestones + Sync info */}
         <div className="grid lg:grid-cols-3 gap-6">

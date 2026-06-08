@@ -94,6 +94,7 @@ export const MOCK_DASHBOARD: DashboardData = {
     { id: 4, name: 'UAT Complete',         planned_date: '2026-06-12', actual_date: null,          status: 'in_progress', is_milestone: true },
     { id: 5, name: 'Go Live',             planned_date: '2026-07-10', actual_date: null,          status: 'not_started', is_milestone: true },
   ],
+  phase_financials: [],
 };
 
 // ─── Baseline ────────────────────────────────
