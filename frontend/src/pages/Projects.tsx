@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import RAGBadge from '../components/RAGBadge';
 import BudgetBar from '../components/BudgetBar';
 import AppNav from '../components/AppNav';
+import { formatCurrency } from '../utils/formatCurrency';
 
 const STATUS_CYCLE: ProjectStatus[] = ['active', 'on_hold', 'closed'];
 const STATUS_LABEL: Record<ProjectStatus, string> = {
@@ -118,8 +119,8 @@ export default function Projects() {
                     </div>
                     <BudgetBar pct={p.budget_pct} />
                     <div className="flex justify-between text-xs text-text-dim pt-1">
-                      <span>£{p.budget_spent.toLocaleString()} spesi</span>
-                      <span>£{p.budget_total.toLocaleString()} budget</span>
+                      <span>{formatCurrency(p.budget_spent)} spesi</span>
+                      <span>{formatCurrency(p.budget_total)} budget</span>
                     </div>
                   </div>
 

@@ -7,6 +7,10 @@ const router = Router();
 // GET /api/projects
 router.get('/', async (req, res) => {
   try {
+    const isPm = req.auth?.role === 'pm';
+    const pmFilter = isPm ? 'WHERE p.pm_id = $1' : '';
+    const params = isPm ? [req.auth!.userId] : [];
+
     const result = await query(
       `SELECT p.id, p.name, p.status, p.currency,
               ph.phase_type as current_phase,
@@ -54,8 +58,10 @@ router.get('/', async (req, res) => {
               ), 0)::integer as planned_hours_total
        FROM "Project" p
        LEFT JOIN "ProjectPhase" ph ON ph.project_id = p.id AND ph.status = 'in_progress'
+       ${pmFilter}
        GROUP BY p.id, p.name, p.status, p.currency, ph.phase_type, ph.display_name
-       ORDER BY p.id`
+       ORDER BY p.id`,
+      params
     );
 
     const today = new Date();

@@ -4,11 +4,8 @@ import AppNav from '../components/AppNav';
 import DateInput from '../components/DateInput';
 import ConfirmModal from '../components/ConfirmModal';
 import { fetchOngoing, fetchOngoingHistory, saveOngoing, deleteSnapshot, syncKeyedin } from '../api/ongoing';
-import type { OngoingData, OngoingSnapshot } from '../types';
-
-function fmt(n: number) {
-  return `£${Math.round(n).toLocaleString('en-GB')}`;
-}
+import type { OngoingData, OngoingSnapshot, OngoingPhaseOption } from '../types';
+import { formatCurrency } from '../utils/formatCurrency';
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -55,6 +52,7 @@ export default function Ongoing() {
   const [history, setHistory] = useState<OngoingSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm]       = useState(getEmptyForm);
+  const [selectedPhaseId, setSelectedPhaseId] = useState<number | null>(null);
   const [saving, setSaving]         = useState(false);
   const [saved, setSaved]           = useState(false);
   const [syncing, setSyncing]       = useState(false);
@@ -63,11 +61,12 @@ export default function Ongoing() {
   const [deleteTarget, setDeleteTarget]       = useState<OngoingSnapshot | null>(null);
   const [deleting, setDeleting]               = useState(false);
 
-  const load = useCallback(() => {
+  const load = useCallback((phaseId?: number | null) => {
     if (!projectId) return;
+    const pid = phaseId !== undefined ? phaseId : selectedPhaseId;
     Promise.all([
-      fetchOngoing(projectId),
-      fetchOngoingHistory(projectId),
+      fetchOngoing(projectId, pid),
+      fetchOngoingHistory(projectId, pid),
     ]).then(([d, h]) => {
       setData(d);
       setHistory(h);
@@ -81,7 +80,7 @@ export default function Ongoing() {
         });
       }
     }).finally(() => setLoading(false));
-  }, [projectId]);
+  }, [projectId, selectedPhaseId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -116,6 +115,7 @@ export default function Ongoing() {
         hours_spent_to_date:    hours,
         working_days_used:      wdUsed,
         working_days_remaining: isNaN(wdRem) ? 0 : wdRem,
+        phase_id:               selectedPhaseId,
       });
       load();
       setSaved(true);
@@ -156,6 +156,14 @@ export default function Ongoing() {
     }
   }
 
+  const phases: OngoingPhaseOption[] = data?.phases ?? [];
+
+  function phaseLabel(phaseId: number | null): string {
+    if (phaseId === null) return 'Progetto';
+    const found = phases.find((p) => p.id === phaseId);
+    return found ? found.display_name : `Fase ${phaseId}`;
+  }
+
   // Derived metrics from latest snapshot + baseline context
   const snap = data?.snapshot;
   const budgetTotal = data?.budget_total ?? 0;
@@ -187,7 +195,7 @@ export default function Ongoing() {
       {showSaveConfirm && (
         <ConfirmModal
           title="Salva Snapshot"
-          message={`Stai per salvare uno snapshot alla data ${fmtDate(form.reporting_date)} con ${form.hours_spent_to_date}h e £${form.cost_spent_to_date} di costo. Confermi?`}
+          message={`Stai per salvare uno snapshot alla data ${fmtDate(form.reporting_date)} con ${form.hours_spent_to_date}h e ${formatCurrency(parseFloat(form.cost_spent_to_date))} di costo. Confermi?`}
           confirmLabel="Salva"
           loading={saving}
           onConfirm={handleSaveConfirmed}
@@ -244,20 +252,20 @@ export default function Ongoing() {
             </div>
             <div className="bg-surface border border-border rounded-2xl px-5 py-4 shadow-card">
               <p className="text-text-muted text-xs font-medium uppercase tracking-wider mb-1">Costo Speso</p>
-              <p className="text-xl font-bold text-text-primary">{fmt(snap.cost_spent_to_date)}</p>
-              <p className="text-text-dim text-xs mt-1">{budgetPct ?? '—'}% del budget {fmt(budgetTotal)}</p>
+              <p className="text-xl font-bold text-text-primary">{formatCurrency(snap.cost_spent_to_date)}</p>
+              <p className="text-text-dim text-xs mt-1">{budgetPct ?? '—'}% del budget {formatCurrency(budgetTotal)}</p>
             </div>
             <div className="bg-surface border border-border rounded-2xl px-5 py-4 shadow-card">
               <p className="text-text-muted text-xs font-medium uppercase tracking-wider mb-1">Costo / Ora</p>
               <p className="text-xl font-bold text-text-primary">
-                {costPerHour != null ? `£${costPerHour.toFixed(0)}` : '—'}
+                {costPerHour != null ? formatCurrency(Math.round(costPerHour)) : '—'}
               </p>
               <p className="text-text-dim text-xs mt-1">{snap.hours_spent_to_date}h registrate</p>
             </div>
             <div className="bg-surface border border-border rounded-2xl px-5 py-4 shadow-card">
               <p className="text-text-muted text-xs font-medium uppercase tracking-wider mb-1">Burn Rate Storico</p>
               <p className="text-xl font-bold text-text-primary">
-                {burnRateHistoric != null ? `${fmt(burnRateHistoric)}/gg` : '—'}
+                {burnRateHistoric != null ? `${formatCurrency(Math.round(burnRateHistoric))}/gg` : '—'}
               </p>
               <p className="text-text-dim text-xs mt-1">{snap.working_days_remaining} GG rimanenti</p>
             </div>
@@ -280,8 +288,8 @@ export default function Ongoing() {
               />
             </div>
             <div className="flex justify-between text-xs text-text-dim mt-1">
-              <span>{fmt(snap.cost_spent_to_date)} speso</span>
-              <span>{fmt(budgetTotal)} budget</span>
+              <span>{formatCurrency(snap.cost_spent_to_date)} speso</span>
+              <span>{formatCurrency(budgetTotal)} budget</span>
             </div>
           </div>
         )}
@@ -292,6 +300,23 @@ export default function Ongoing() {
             <h2 className="font-semibold text-text-primary">Inserisci Snapshot Manuale</h2>
 
             <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2">
+                <label className="block text-xs text-text-muted mb-1">Riferito a</label>
+                <select
+                  value={selectedPhaseId ?? ''}
+                  onChange={(e) => {
+                    const val = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                    setSelectedPhaseId(val);
+                    load(val);
+                  }}
+                  className="w-full bg-base border border-border text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
+                >
+                  <option value="">Progetto (aggregato)</option>
+                  {phases.map((p) => (
+                    <option key={p.id} value={p.id}>{p.display_name}</option>
+                  ))}
+                </select>
+              </div>
               <div className="col-span-2">
                 <label className="block text-xs text-text-muted mb-1">Data di riferimento *</label>
                 <DateInput
@@ -382,18 +407,23 @@ export default function Ongoing() {
                     <div>
                       <p className="text-sm font-medium text-text-primary">{fmtDate(s.reporting_date)}</p>
                       <p className="text-xs text-text-dim">
-                        {fmt(s.cost_spent_to_date)} · {s.hours_spent_to_date}h · {s.working_days_used} GG usati
+                        {formatCurrency(s.cost_spent_to_date)} · {s.hours_spent_to_date}h · {s.working_days_used} GG usati
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0 ml-3 flex items-start gap-2">
                       <div>
-                        <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
-                          s.source === 'keyedin_api'
-                            ? 'bg-accent/15 text-accent'
-                            : 'bg-surface-2 text-text-muted'
-                        }`}>
-                          {s.source === 'keyedin_api' ? 'Keyedin' : 'Manuale'}
-                        </span>
+                        <div className="flex items-center justify-end gap-1 flex-wrap">
+                          <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
+                            s.source === 'keyedin_api'
+                              ? 'bg-accent/15 text-accent'
+                              : 'bg-surface-2 text-text-muted'
+                          }`}>
+                            {s.source === 'keyedin_api' ? 'Keyedin' : 'Manuale'}
+                          </span>
+                          <span className="text-xs px-1.5 py-0.5 rounded font-medium bg-surface-2 text-text-dim">
+                            {phaseLabel(s.phase_id)}
+                          </span>
+                        </div>
                         <p className="text-xs text-text-dim mt-1">{fmtDateTime(s.created_at)}</p>
                       </div>
                       {withinDeletionWindow(s) && (

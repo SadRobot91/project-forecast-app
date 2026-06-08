@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query } from '../db';
-import { calculateNetworkDays, calculateRevisedForecast, calculateRAGStatus } from '../services/computations';
+import { calculateNetworkDays } from '../services/computations';
+import { computeProjectFinancials } from '../services/phaseFinancialEngine';
 
 const router = Router({ mergeParams: true });
 
@@ -49,9 +50,12 @@ router.get('/', async (req, res) => {
       [projectId]
     );
 
-    // Compute KPIs
+    // Phase Financial Engine — EAC per fase e rollup di progetto
+    const rollup = await computeProjectFinancials(parseInt(projectId, 10));
+
+    // Compute flat KPIs (legacy fields preserved for backward compatibility)
     const phases = phasesRes.rows;
-    const totalBudget       = phases.reduce((s: number, p: any) => s + parseFloat(p.budget), 0);
+    const totalBudget       = rollup.total_budget;
     const totalWorkingDays  = phases.reduce((s: number, p: any) => s + (p.working_days ?? 0), 0);
     const costSpent         = ongoing ? parseFloat(ongoing.cost_spent_to_date) : 0;
     const hoursSpent        = ongoing ? parseFloat(ongoing.hours_spent_to_date) : 0;
@@ -69,15 +73,10 @@ router.get('/', async (req, res) => {
       }
     }
 
-    const totalPlannedHours = phases.reduce((s: number, p: any) => s + (p.planned_hours ?? (p.working_days ?? 0) * 8), 0);
-    const hoursRemaining    = Math.max(0, totalPlannedHours - hoursSpent);
-    const avgCostPerHour    = hoursSpent > 0 && costSpent > 0 ? costSpent / hoursSpent : 0;
-    const revisedForecast   = calculateRevisedForecast(
-      hoursSpent, costSpent, dailyBurnRate, daysRemaining, avgCostPerHour, hoursRemaining
-    );
-    const ragStatus  = calculateRAGStatus(revisedForecast, totalBudget);
-    const budgetPct  = totalBudget > 0 ? Math.round((costSpent / totalBudget) * 100) : 0;
-    const variance   = Math.round(revisedForecast - totalBudget);
+    const revisedForecast = rollup.total_revised_forecast;
+    const ragStatus       = rollup.rag_status;
+    const budgetPct       = totalBudget > 0 ? Math.round((costSpent / totalBudget) * 100) : 0;
+    const variance        = Math.round(rollup.total_variance);
 
     const phaseBudgets = phases.map((p: any) => {
       const budget = parseFloat(p.budget);
@@ -116,6 +115,7 @@ router.get('/', async (req, res) => {
         working_days_used:      ongoing?.working_days_used ?? 0,
       },
       phase_budgets: phaseBudgets,
+      phase_financials: rollup.phases,
       milestones: milestonesRes.rows.map((m: any) => ({
         id:           m.id,
         name:         m.name,

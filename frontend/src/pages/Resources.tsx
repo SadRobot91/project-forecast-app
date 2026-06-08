@@ -3,6 +3,7 @@ import AppNav from '../components/AppNav';
 import { fetchResourceRegistry } from '../api/allocation';
 import { fmtWeek } from '../utils/networkDays';
 import type { ResourceRegistryData, ResourceRegistryRow } from '../types';
+import { formatCurrency } from '../utils/formatCurrency';
 
 function fteSemaphore(total: number): { icon: string; class: string } {
   if (total === 0)     return { icon: '⚪', class: 'text-text-dim' };
@@ -35,12 +36,12 @@ function ResourceRow({ row, weeks, filterProject, getTotal }: ResourceRowProps) 
     <tbody>
       {/* Resource header row */}
       <tr className="bg-surface-2 border-b border-border cursor-pointer hover:bg-surface-3/40 transition-colors" onClick={() => setExpanded((o) => !o)}>
-        <td className="px-4 py-3" colSpan={2}>
+        <td className="sticky left-0 bg-surface-2 z-10 px-4 py-3" colSpan={2}>
           <div className="flex items-center gap-2">
             <span className="text-text-dim text-xs">{expanded ? '▼' : '▶'}</span>
             <div>
               <p className="font-semibold text-text-primary">{row.resource.name}</p>
-              <p className="text-text-dim text-xs">{row.resource.role} · {row.resource.day_rate} £/gg</p>
+              <p className="text-text-dim text-xs">{row.resource.role} · {formatCurrency(row.resource.day_rate)}/gg</p>
             </div>
           </div>
         </td>
@@ -61,7 +62,7 @@ function ResourceRow({ row, weeks, filterProject, getTotal }: ResourceRowProps) 
       {/* Project sub-rows */}
       {expanded && filteredProjects.map((projectName) => (
         <tr key={projectName} className="border-b border-border/50 hover:bg-surface-2/30 transition-colors">
-          <td className="px-4 py-2 pl-10 text-text-dim text-xs" />
+          <td className="sticky left-0 bg-surface z-10 px-4 py-2 pl-10 text-text-dim text-xs" />
           <td className="px-4 py-2 text-text-muted text-xs">{projectName}</td>
           {weeks.map((w) => {
             const alloc = row.allocations.find((a) => a.project_name === projectName && a.week_start === w);
@@ -204,29 +205,32 @@ export default function Resources() {
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto rounded-2xl border border-border">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border bg-surface-2">
-                <th className="text-left px-4 py-3 text-xs text-text-muted font-medium uppercase tracking-wider w-40">Risorsa</th>
-                <th className="text-left px-4 py-3 text-xs text-text-muted font-medium uppercase tracking-wider w-40">Progetto</th>
-                {visibleWeeks.map((w) => (
-                  <th key={w} className="text-center px-3 py-3 text-xs text-text-muted font-medium uppercase tracking-wider min-w-[72px]">
-                    {fmtWeek(w)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            {filteredRows.map((row) => (
-              <ResourceRow
-                key={row.resource.id}
-                row={row}
-                weeks={visibleWeeks}
-                filterProject={filterProject}
-                getTotal={(w) => getVisibleTotal(row, w)}
-              />
-            ))}
-          </table>
+        <div className="relative rounded-2xl border border-border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-surface-2">
+                  <th className="sticky left-0 bg-surface-2 z-10 text-left px-4 py-3 text-xs text-text-muted font-medium uppercase tracking-wider w-40">Risorsa</th>
+                  <th className="text-left px-4 py-3 text-xs text-text-muted font-medium uppercase tracking-wider w-40">Progetto</th>
+                  {visibleWeeks.map((w) => (
+                    <th key={w} className="text-center px-3 py-3 text-xs text-text-muted font-medium uppercase tracking-wider min-w-[72px]">
+                      {fmtWeek(w)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              {filteredRows.map((row) => (
+                <ResourceRow
+                  key={row.resource.id}
+                  row={row}
+                  weeks={visibleWeeks}
+                  filterProject={filterProject}
+                  getTotal={(w) => getVisibleTotal(row, w)}
+                />
+              ))}
+            </table>
+          </div>
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent" />
         </div>
 
         {filteredRows.length === 0 && (

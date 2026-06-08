@@ -87,11 +87,29 @@ export interface MilestoneItem {
   is_milestone: boolean;
 }
 
+export interface PhaseFinancial {
+  phase_id: number;
+  phase_type: PhaseType;
+  display_name: string;
+  status: PhaseStatus;
+  budget: number;
+  cost_spent: number;
+  hours_spent: number;
+  working_days_used: number;
+  working_days_total: number;
+  pct_complete: number;
+  revised_forecast: number;
+  variance: number;
+  rag_status: RAGStatus;
+  forecast_basis: 'completed' | 'in_progress' | 'not_started';
+}
+
 export interface DashboardData {
   project_id: number;
   project_name: string;
   kpis: DashboardKPIs;
   phase_budgets: PhaseBudgetRow[];
+  phase_financials?: PhaseFinancial[];
   milestones: MilestoneItem[];
 }
 
@@ -191,9 +209,17 @@ export interface ResourceRegistryFilters {
 
 // ─── Ongoing ─────────────────────────────────
 
+export interface OngoingPhaseOption {
+  id: number;
+  display_name: string;
+  phase_type: string;
+  order: number;
+}
+
 export interface OngoingSnapshot {
   id: number;
   project_id: number;
+  phase_id: number | null;
   reporting_date: string;
   hours_spent_to_date: number;
   cost_spent_to_date: number;
@@ -208,6 +234,7 @@ export interface OngoingData {
   budget_total: number;
   total_working_days: number;
   snapshot: OngoingSnapshot | null;
+  phases: OngoingPhaseOption[];
 }
 
 export interface OngoingPayload {
@@ -216,6 +243,7 @@ export interface OngoingPayload {
   hours_spent_to_date: number;
   working_days_used: number;
   working_days_remaining: number;
+  phase_id?: number | null;
 }
 
 // ─── Gantt ────────────────────────────────────

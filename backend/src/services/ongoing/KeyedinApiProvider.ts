@@ -115,12 +115,12 @@ function resolveReportingDate(row: Record<string, string>): string {
 export class KeyedinApiProvider implements OngoingDataProvider {
   private fallback = new ManualFallbackProvider();
 
-  async getLatestSnapshot(projectId: string): Promise<SnapshotData | null> {
-    return this.fallback.getLatestSnapshot(projectId);
+  async getLatestSnapshot(projectId: string, phaseId?: number | null): Promise<SnapshotData | null> {
+    return this.fallback.getLatestSnapshot(projectId, phaseId);
   }
 
-  async getHistory(projectId: string): Promise<SnapshotData[]> {
-    return this.fallback.getHistory(projectId);
+  async getHistory(projectId: string, phaseId?: number | null): Promise<SnapshotData[]> {
+    return this.fallback.getHistory(projectId, phaseId);
   }
 
   async saveSnapshot(data: SnapshotData): Promise<SnapshotData> {

@@ -11,6 +11,9 @@ const keyedinProvider = new KeyedinApiProvider();
 // GET /api/projects/:id/ongoing
 router.get('/', async (req, res) => {
   const { id: projectId } = req.params as { id: string };
+  const rawPhaseId = req.query.phase_id as string | undefined;
+  const phaseId = rawPhaseId !== undefined ? (rawPhaseId === '' ? null : parseInt(rawPhaseId, 10)) : undefined;
+
   try {
     const projRes = await query(
       `SELECT p.name,
@@ -21,13 +24,19 @@ router.get('/', async (req, res) => {
     );
     if (!projRes.rowCount) return res.status(404).json({ error: 'Project not found' });
 
-    const snapshot = await manualProvider.getLatestSnapshot(projectId);
+    const phasesRes = await query(
+      `SELECT id, display_name, phase_type, "order" FROM "ProjectPhase" WHERE project_id = $1 ORDER BY "order"`,
+      [projectId]
+    );
+
+    const snapshot = await manualProvider.getLatestSnapshot(projectId, phaseId);
 
     res.json({
       project_name:        projRes.rows[0].name,
       budget_total:        parseFloat(projRes.rows[0].budget_total),
       total_working_days:  parseInt(projRes.rows[0].total_working_days, 10),
       snapshot:            snapshot ?? null,
+      phases:              phasesRes.rows,
     });
   } catch (err) {
     console.error(err);
@@ -38,8 +47,11 @@ router.get('/', async (req, res) => {
 // GET /api/projects/:id/ongoing/history
 router.get('/history', async (req, res) => {
   const { id: projectId } = req.params as { id: string };
+  const rawPhaseId = req.query.phase_id as string | undefined;
+  const phaseId = rawPhaseId !== undefined ? (rawPhaseId === '' ? null : parseInt(rawPhaseId, 10)) : undefined;
+
   try {
-    const history = await manualProvider.getHistory(projectId);
+    const history = await manualProvider.getHistory(projectId, phaseId);
     res.json(history);
   } catch (err) {
     console.error(err);
@@ -50,7 +62,7 @@ router.get('/history', async (req, res) => {
 // POST /api/projects/:id/ongoing
 router.post('/', async (req, res) => {
   const { id: projectId } = req.params as { id: string };
-  const { reporting_date, hours_spent_to_date, cost_spent_to_date, working_days_used, working_days_remaining } = req.body;
+  const { reporting_date, hours_spent_to_date, cost_spent_to_date, working_days_used, working_days_remaining, phase_id } = req.body;
 
   if (!reporting_date || typeof reporting_date !== 'string') {
     return res.status(400).json({ error: 'reporting_date is required (YYYY-MM-DD)' });
@@ -62,9 +74,22 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'hours_spent_to_date is required and must be a number' });
   }
 
+  const resolvedPhaseId: number | null = (phase_id !== undefined && phase_id !== null) ? parseInt(phase_id, 10) : null;
+
   try {
+    if (resolvedPhaseId !== null) {
+      const phaseCheck = await query(
+        'SELECT 1 FROM "ProjectPhase" WHERE id = $1 AND project_id = $2',
+        [resolvedPhaseId, projectId]
+      );
+      if (!phaseCheck.rowCount) {
+        return res.status(400).json({ error: 'phase_id does not belong to this project' });
+      }
+    }
+
     const data: SnapshotData = {
       project_id: parseInt(projectId, 10),
+      phase_id: resolvedPhaseId,
       reporting_date,
       hours_spent_to_date,
       cost_spent_to_date,

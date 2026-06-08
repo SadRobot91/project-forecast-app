@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import type { AuthUser } from '../types';
-import { logout as apiLogout } from '../api/auth';
+import { supabase } from '../api/supabase';
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -18,6 +18,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return stored ? (JSON.parse(stored) as AuthUser) : null;
   });
 
+  useEffect(() => {
+    if (!supabase) return;
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (event === 'SIGNED_OUT' || !session) {
+          setToken(null);
+          setUser(null);
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+        }
+        // TOKEN_REFRESHED: update the stored token so apiClient sends the new one
+        if (event === 'TOKEN_REFRESHED' && session) {
+          const newToken = session.access_token;
+          localStorage.setItem('token', newToken);
+          setToken(newToken);
+        }
+      }
+    );
+    return () => subscription.unsubscribe();
+  }, []);
+
   const setAuth = useCallback((newToken: string, newUser: AuthUser) => {
     localStorage.setItem('token', newToken);
     localStorage.setItem('user', JSON.stringify(newUser));
@@ -25,10 +46,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(newUser);
   }, []);
 
-  const logout = useCallback(() => {
-    apiLogout();
+  const logout = useCallback(async () => {
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
     setToken(null);
     setUser(null);
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
   }, []);
 
   return (

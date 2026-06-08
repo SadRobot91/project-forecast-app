@@ -61,20 +61,33 @@ router.put('/:id', async (req, res) => {
     return res.status(400).json({ error: 'day_rate must be a positive number' });
   }
   try {
-    // Step B: after lock the BAC is snapshotted on Baseline. day_rate
-    // changes affect only future weekly_cost calculations (when an
-    // allocation cell is re-saved); they do not retroactively alter the
-    // locked baseline. Step G (day_rate versioning) will track rate
-    // history for full traceability.
+    await query('BEGIN');
+
     const result = await query(
       'UPDATE "Resource" SET name = $1, role = $2, day_rate = $3 WHERE id = $4 RETURNING *',
       [name.trim(), role ?? '', rate, id]
     );
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Not found' });
+    if (result.rowCount === 0) {
+      await query('ROLLBACK');
+      return res.status(404).json({ error: 'Not found' });
+    }
+
+    // Step G: cascade new day_rate to all existing AllocationEntry rows for
+    // this resource. weekly_cost = new_day_rate × fte × working_days.
+    // working_days is already stored per entry (materialised at INSERT).
+    await query(
+      `UPDATE "AllocationEntry"
+       SET weekly_cost = $1 * fte * working_days
+       WHERE resource_id = $2`,
+      [rate, id]
+    );
+
+    await query('COMMIT');
     res.json(result.rows[0]);
-  } catch (err) {
+  } catch (err: any) {
+    await query('ROLLBACK');
     console.error(err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
 
