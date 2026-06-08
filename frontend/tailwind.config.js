@@ -18,7 +18,7 @@ export default {
         'rag-red': '#ef4444',
         'text-primary': '#e2e8f0',
         'text-muted': '#94a3b8',
-        'text-dim': '#64748b',
+        'text-dim': '#8896aa',
         border: '#2d2d4e',
       },
       fontFamily: {

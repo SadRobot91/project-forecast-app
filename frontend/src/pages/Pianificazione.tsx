@@ -14,12 +14,9 @@ import type {
   AllocationCell,
   Resource,
 } from '../types';
+import { formatCurrency } from '../utils/formatCurrency';
 
 type Tab = 'fasi' | 'risorse';
-
-function fmt(n: number) {
-  return `£${Math.round(n).toLocaleString('en-GB')}`;
-}
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
@@ -176,8 +173,8 @@ function FasiTab({
                 <td className="px-4 py-3 font-medium text-text-primary">{row.working_days}</td>
                 <td className="px-4 py-3 text-text-muted">{row.planned_hours}</td>
                 <td className="px-4 py-3 font-medium text-text-primary">
-                  {row.budget > 0 ? fmt(row.budget) : (
-                    <span className="text-text-dim text-xs">£0 — definito in Risorse</span>
+                  {row.budget > 0 ? formatCurrency(row.budget) : (
+                    <span className="text-text-dim text-xs">{formatCurrency(0)} — definito in Risorse</span>
                   )}
                 </td>
                 <td className="px-4 py-3">
@@ -191,7 +188,7 @@ function FasiTab({
                     />
                     <span className="text-text-muted">%</span>
                     {row.contingency_pct > 0 && (
-                      <span className="text-text-dim text-xs">+{fmt(row.budget * row.contingency_pct / 100)}</span>
+                      <span className="text-text-dim text-xs">+{formatCurrency(row.budget * row.contingency_pct / 100)}</span>
                     )}
                   </div>
                 </td>
@@ -204,7 +201,7 @@ function FasiTab({
               <td colSpan={2} className="px-4 py-3" />
               <td className="px-4 py-3 font-bold text-accent">{totalWD}</td>
               <td className="px-4 py-3 font-bold text-accent">{totalHours}</td>
-              <td className="px-4 py-3 font-bold text-accent">{fmt(totalBudget)}</td>
+              <td className="px-4 py-3 font-bold text-accent">{formatCurrency(totalBudget)}</td>
               <td className="px-4 py-3" />
             </tr>
           </tfoot>
@@ -217,13 +214,13 @@ function FasiTab({
       <div className="grid sm:grid-cols-2 gap-4">
         <div className="bg-surface border border-border rounded-2xl px-5 py-4 shadow-card">
           <p className="text-text-muted text-xs font-medium uppercase tracking-wider mb-1">Budget Totale</p>
-          <p className="text-xl font-bold text-text-primary">{fmt(totalBudget)}</p>
+          <p className="text-xl font-bold text-text-primary">{formatCurrency(totalBudget)}</p>
         </div>
         <div className="bg-surface border border-accent/30 rounded-2xl px-5 py-4 shadow-glow-accent">
           <p className="text-text-muted text-xs font-medium uppercase tracking-wider mb-1">BASELINE TOTAL FORECAST</p>
-          <p className="text-2xl font-bold text-accent">{fmt(totalForecast)}</p>
+          <p className="text-2xl font-bold text-accent">{formatCurrency(totalForecast)}</p>
           {totalForecast > totalBudget && (
-            <p className="text-text-dim text-xs mt-1">+{fmt(totalForecast - totalBudget)} contingenza totale</p>
+            <p className="text-text-dim text-xs mt-1">+{formatCurrency(totalForecast - totalBudget)} contingenza totale</p>
           )}
         </div>
       </div>
@@ -277,7 +274,7 @@ function AddResourceModal({ available, onAdd, onClose, onCreateNew }: AddResourc
                   <p className="font-medium text-text-primary text-sm">{r.name}</p>
                   <p className="text-text-dim text-xs">{r.role}</p>
                 </div>
-                <span className="text-accent text-sm font-medium">{fmt(r.day_rate)}/gg</span>
+                <span className="text-accent text-sm font-medium">{formatCurrency(r.day_rate)}/gg</span>
               </button>
             ))}
           </div>
@@ -412,7 +409,7 @@ function PhaseBlock({ phase, projectId, allResources, crossTotals, isBaselineLoc
         </div>
         <div className="flex items-center gap-4 text-xs text-text-muted">
           <span>FTE medio: <strong className="text-text-primary">{avgFTE.toFixed(2)}</strong></span>
-          <span>Budget fase: <strong className="text-accent">{fmt(phaseBudget)}</strong></span>
+          <span>Budget fase: <strong className="text-accent">{formatCurrency(phaseBudget)}</strong></span>
         </div>
       </button>
 
@@ -442,7 +439,7 @@ function PhaseBlock({ phase, projectId, allResources, crossTotals, isBaselineLoc
                         <p className="font-medium text-text-primary text-sm">{r.name}</p>
                         <p className="text-text-dim text-xs">{r.role}</p>
                       </td>
-                      <td className="px-4 py-3 text-text-muted text-sm">{fmt(r.day_rate)}/gg</td>
+                      <td className="px-4 py-3 text-text-muted text-sm">{formatCurrency(r.day_rate)}/gg</td>
                       {weeks.map((w) => {
                         const cell = getCell(r.id, w);
                         const total = getCrossProjectTotal(r.id, w);
@@ -457,7 +454,7 @@ function PhaseBlock({ phase, projectId, allResources, crossTotals, isBaselineLoc
                         );
                       })}
                       <td className="px-3 py-3 text-center font-medium text-text-primary text-sm whitespace-nowrap">
-                        {fmt(resourceCost)}
+                        {formatCurrency(resourceCost)}
                       </td>
                       <td className="px-2 py-3">
                         <button
