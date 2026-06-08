@@ -121,94 +121,100 @@ function FasiTab({
       )}
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-2xl border border-border">
-        <table className="w-full text-sm min-w-[960px]">
-          <thead>
-            <tr className="border-b border-border bg-surface-2">
-              {['Fase', 'Inizio', 'Fine', 'GG Lavorativi *', 'Ore Pianificate', 'Budget £', 'Contingenza %'].map((h) => (
-                <th key={h} className="text-left text-text-muted font-medium px-4 py-3 text-xs uppercase tracking-wider whitespace-nowrap">
-                  {h}
+      <div className="relative rounded-2xl border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[960px]">
+            <thead>
+              <tr className="border-b border-border bg-surface-2">
+                <th className="sticky left-0 bg-surface-2 z-10 text-left text-text-muted font-medium px-4 py-3 text-xs uppercase tracking-wider whitespace-nowrap">
+                  Fase
                 </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, idx) => (
-              <tr key={row.phase_id} className="border-b border-border/50 hover:bg-surface-2/40 transition-colors">
-                <td className="px-4 py-3 font-semibold text-text-primary">
-                  {isLocked ? (
-                    <span>{row.display_name}</span>
-                  ) : editingName[row.phase_id] !== undefined ? (
-                    <input
-                      autoFocus
-                      value={editingName[row.phase_id]}
-                      onChange={(e) => setEditingName((prev) => ({ ...prev, [row.phase_id]: e.target.value }))}
-                      onBlur={() => commitName(row.phase_id)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') commitName(row.phase_id);
-                        if (e.key === 'Escape') setEditingName((prev) => { const n = {...prev}; delete n[row.phase_id]; return n; });
-                      }}
-                      className="bg-base border border-accent/40 text-text-primary rounded px-2 py-0.5 text-sm w-40 focus:outline-none focus:border-accent"
-                    />
-                  ) : (
-                    <button
-                      onClick={() => startEditName(row.phase_id, row.display_name)}
-                      className="group flex items-center gap-1.5 hover:text-accent transition-colors"
-                      title="Clicca per rinominare"
-                    >
-                      {row.display_name}
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                      </svg>
-                    </button>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <DateInput value={row.planned_start} disabled={isLocked}
-                    onChange={(val) => onUpdatePhase(idx, 'planned_start', val)}
-                    className={`rounded-lg px-2 py-1 text-sm w-36 ${inputCls}`} />
-                </td>
-                <td className="px-4 py-3">
-                  <DateInput value={row.planned_end} disabled={isLocked}
-                    onChange={(val) => onUpdatePhase(idx, 'planned_end', val)}
-                    className={`rounded-lg px-2 py-1 text-sm w-36 ${inputCls}`} />
-                </td>
-                <td className="px-4 py-3 font-medium text-text-primary">{row.working_days}</td>
-                <td className="px-4 py-3 text-text-muted">{row.planned_hours}</td>
-                <td className="px-4 py-3 font-medium text-text-primary">
-                  {row.budget > 0 ? fmt(row.budget) : (
-                    <span className="text-text-dim text-xs">£0 — definito in Risorse</span>
-                  )}
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number" min={0} max={100}
-                      value={row.contingency_pct}
-                      disabled={isLocked}
-                      onChange={(e) => onUpdateContingency(idx, parseFloat(e.target.value) || 0)}
-                      className={`rounded-lg px-2 py-1 text-sm w-20 text-center ${inputCls}`}
-                    />
-                    <span className="text-text-muted">%</span>
-                    {row.contingency_pct > 0 && (
-                      <span className="text-text-dim text-xs">+{fmt(row.budget * row.contingency_pct / 100)}</span>
-                    )}
-                  </div>
-                </td>
+                {['Inizio', 'Fine', 'GG Lavorativi *', 'Ore Pianificate', 'Budget £', 'Contingenza %'].map((h) => (
+                  <th key={h} className="text-left text-text-muted font-medium px-4 py-3 text-xs uppercase tracking-wider whitespace-nowrap">
+                    {h}
+                  </th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="border-t-2 border-border bg-surface-2">
-              <td className="px-4 py-3 font-bold text-text-primary">TOTALE</td>
-              <td colSpan={2} className="px-4 py-3" />
-              <td className="px-4 py-3 font-bold text-accent">{totalWD}</td>
-              <td className="px-4 py-3 font-bold text-accent">{totalHours}</td>
-              <td className="px-4 py-3 font-bold text-accent">{fmt(totalBudget)}</td>
-              <td className="px-4 py-3" />
-            </tr>
-          </tfoot>
-        </table>
+            </thead>
+            <tbody>
+              {rows.map((row, idx) => (
+                <tr key={row.phase_id} className="border-b border-border/50 hover:bg-surface-2/40 transition-colors">
+                  <td className="sticky left-0 bg-surface z-10 px-4 py-3 font-semibold text-text-primary">
+                    {isLocked ? (
+                      <span>{row.display_name}</span>
+                    ) : editingName[row.phase_id] !== undefined ? (
+                      <input
+                        autoFocus
+                        value={editingName[row.phase_id]}
+                        onChange={(e) => setEditingName((prev) => ({ ...prev, [row.phase_id]: e.target.value }))}
+                        onBlur={() => commitName(row.phase_id)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitName(row.phase_id);
+                          if (e.key === 'Escape') setEditingName((prev) => { const n = {...prev}; delete n[row.phase_id]; return n; });
+                        }}
+                        className="bg-base border border-accent/40 text-text-primary rounded px-2 py-0.5 text-sm w-40 focus:outline-none focus:border-accent"
+                      />
+                    ) : (
+                      <button
+                        onClick={() => startEditName(row.phase_id, row.display_name)}
+                        className="group flex items-center gap-1.5 hover:text-accent transition-colors"
+                        title="Clicca per rinominare"
+                      >
+                        {row.display_name}
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 opacity-0 group-hover:opacity-50 transition-opacity" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                        </svg>
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <DateInput value={row.planned_start} disabled={isLocked}
+                      onChange={(val) => onUpdatePhase(idx, 'planned_start', val)}
+                      className={`rounded-lg px-2 py-1 text-sm w-36 ${inputCls}`} />
+                  </td>
+                  <td className="px-4 py-3">
+                    <DateInput value={row.planned_end} disabled={isLocked}
+                      onChange={(val) => onUpdatePhase(idx, 'planned_end', val)}
+                      className={`rounded-lg px-2 py-1 text-sm w-36 ${inputCls}`} />
+                  </td>
+                  <td className="px-4 py-3 font-medium text-text-primary">{row.working_days}</td>
+                  <td className="px-4 py-3 text-text-muted">{row.planned_hours}</td>
+                  <td className="px-4 py-3 font-medium text-text-primary">
+                    {row.budget > 0 ? fmt(row.budget) : (
+                      <span className="text-text-dim text-xs">£0 — definito in Risorse</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number" min={0} max={100}
+                        value={row.contingency_pct}
+                        disabled={isLocked}
+                        onChange={(e) => onUpdateContingency(idx, parseFloat(e.target.value) || 0)}
+                        className={`rounded-lg px-2 py-1 text-sm w-20 text-center ${inputCls}`}
+                      />
+                      <span className="text-text-muted">%</span>
+                      {row.contingency_pct > 0 && (
+                        <span className="text-text-dim text-xs">+{fmt(row.budget * row.contingency_pct / 100)}</span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-border bg-surface-2">
+                <td className="sticky left-0 bg-surface-2 z-10 px-4 py-3 font-bold text-text-primary">TOTALE</td>
+                <td colSpan={2} className="px-4 py-3" />
+                <td className="px-4 py-3 font-bold text-accent">{totalWD}</td>
+                <td className="px-4 py-3 font-bold text-accent">{totalHours}</td>
+                <td className="px-4 py-3 font-bold text-accent">{fmt(totalBudget)}</td>
+                <td className="px-4 py-3" />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent" />
       </div>
 
       <p className="text-text-dim text-xs">* I GG mostrati escludono le festività. Il valore definitivo (con festività IT) viene calcolato al salvataggio.</p>
@@ -418,59 +424,62 @@ function PhaseBlock({ phase, projectId, allResources, crossTotals, isBaselineLoc
 
       {open && (
         <div className="border-t border-border">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-surface-2">
-                  <th className="text-left px-4 py-2.5 text-xs text-text-muted font-medium uppercase tracking-wider w-40">Risorsa</th>
-                  <th className="text-left px-4 py-2.5 text-xs text-text-muted font-medium uppercase tracking-wider w-24">Day Rate</th>
-                  {weeks.map((w) => (
-                    <th key={w} className="text-center px-3 py-2.5 text-xs text-text-muted font-medium uppercase tracking-wider min-w-[72px]">
-                      {fmtWeek(w)}
-                    </th>
-                  ))}
-                  <th className="text-center px-3 py-2.5 text-xs text-text-muted font-medium uppercase tracking-wider">Costo Totale</th>
-                  <th className="w-8" />
-                </tr>
-              </thead>
-              <tbody>
-                {resources.map((r) => {
-                  const resourceCost = cells.filter((c) => c.resource_id === r.id).reduce((s, c) => s + c.weekly_cost, 0);
-                  return (
-                    <tr key={r.id} className="border-b border-border/50 hover:bg-surface-2/40 transition-colors">
-                      <td className="px-4 py-3">
-                        <p className="font-medium text-text-primary text-sm">{r.name}</p>
-                        <p className="text-text-dim text-xs">{r.role}</p>
-                      </td>
-                      <td className="px-4 py-3 text-text-muted text-sm">{fmt(r.day_rate)}/gg</td>
-                      {weeks.map((w) => {
-                        const cell = getCell(r.id, w);
-                        const total = getCrossProjectTotal(r.id, w);
-                        return (
-                          <td key={w} className="px-2 py-2 text-center">
-                            <FTECell
-                              value={cell?.fte ?? 0}
-                              crossProjectTotal={total}
-                              onChange={(val) => updateCell(r.id, w, val)}
-                            />
-                          </td>
-                        );
-                      })}
-                      <td className="px-3 py-3 text-center font-medium text-text-primary text-sm whitespace-nowrap">
-                        {fmt(resourceCost)}
-                      </td>
-                      <td className="px-2 py-3">
-                        <button
-                          onClick={() => handleRemove(r.id)}
-                          className="text-text-dim hover:text-rag-red transition-colors text-xs"
-                          title="Rimuovi risorsa da questa fase"
-                        >✕</button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="relative overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-surface-2">
+                    <th className="sticky left-0 bg-surface-2 z-10 text-left px-4 py-2.5 text-xs text-text-muted font-medium uppercase tracking-wider w-40">Risorsa</th>
+                    <th className="text-left px-4 py-2.5 text-xs text-text-muted font-medium uppercase tracking-wider w-24">Day Rate</th>
+                    {weeks.map((w) => (
+                      <th key={w} className="text-center px-3 py-2.5 text-xs text-text-muted font-medium uppercase tracking-wider min-w-[72px]">
+                        {fmtWeek(w)}
+                      </th>
+                    ))}
+                    <th className="text-center px-3 py-2.5 text-xs text-text-muted font-medium uppercase tracking-wider">Costo Totale</th>
+                    <th className="w-8" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {resources.map((r) => {
+                    const resourceCost = cells.filter((c) => c.resource_id === r.id).reduce((s, c) => s + c.weekly_cost, 0);
+                    return (
+                      <tr key={r.id} className="border-b border-border/50 hover:bg-surface-2/40 transition-colors">
+                        <td className="sticky left-0 bg-surface z-10 px-4 py-3">
+                          <p className="font-medium text-text-primary text-sm">{r.name}</p>
+                          <p className="text-text-dim text-xs">{r.role}</p>
+                        </td>
+                        <td className="px-4 py-3 text-text-muted text-sm">{fmt(r.day_rate)}/gg</td>
+                        {weeks.map((w) => {
+                          const cell = getCell(r.id, w);
+                          const total = getCrossProjectTotal(r.id, w);
+                          return (
+                            <td key={w} className="px-2 py-2 text-center">
+                              <FTECell
+                                value={cell?.fte ?? 0}
+                                crossProjectTotal={total}
+                                onChange={(val) => updateCell(r.id, w, val)}
+                              />
+                            </td>
+                          );
+                        })}
+                        <td className="px-3 py-3 text-center font-medium text-text-primary text-sm whitespace-nowrap">
+                          {fmt(resourceCost)}
+                        </td>
+                        <td className="px-2 py-3">
+                          <button
+                            onClick={() => handleRemove(r.id)}
+                            className="text-text-dim hover:text-rag-red transition-colors text-xs"
+                            title="Rimuovi risorsa da questa fase"
+                          >✕</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-surface to-transparent" />
           </div>
 
           <div className="px-5 py-3 border-t border-border flex items-center justify-between">
