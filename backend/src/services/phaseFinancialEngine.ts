@@ -1,11 +1,9 @@
-import { query as defaultQuery } from '../db';
+import { query as defaultQuery, QueryFn } from '../db';
 import {
   calculateRevisedForecast,
   calculateRAGStatus,
   RAGStatus,
 } from './computations';
-
-type QueryFn = typeof defaultQuery;
 
 export interface PhaseFinancial {
   phase_id: number;
