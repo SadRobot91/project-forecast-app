@@ -1,7 +1,7 @@
 # ─── Dipendenze Node.js ───────────────────────────────────────────────────────
 backend/node_modules/
 frontend/node_modules/
-
+node_modules/
 # ─── Build artifacts ──────────────────────────────────────────────────────────
 backend/dist/
 frontend/dist/
@@ -12,6 +12,7 @@ frontend/node_modules/.vite/
 # ─── File di lock (rumore, raramente utili per analisi AI) ────────────────────
 backend/package-lock.json
 frontend/package-lock.json
+package-lock.json
 backend/node_modules/.package-lock.json
 frontend/node_modules/.package-lock.json
 

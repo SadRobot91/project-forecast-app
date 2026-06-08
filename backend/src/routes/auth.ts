@@ -5,6 +5,7 @@ const router = Router();
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
+  if (!supabase) return res.status(503).json({ error: 'Auth service not configured' });
   const { email, password } = req.body;
 
   try {
@@ -32,6 +33,7 @@ router.post('/login', async (req, res) => {
 
 // POST /api/auth/logout
 router.post('/logout', async (req, res) => {
+  if (!supabase) return res.status(503).json({ error: 'Auth service not configured' });
   try {
     const { error } = await supabase.auth.signOut();
     if (error) return res.status(500).json({ error: error.message });

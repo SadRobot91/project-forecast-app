@@ -12,6 +12,7 @@ frontend/node_modules/.vite/
 # ─── File di lock (rumore, raramente utili per analisi AI) ────────────────────
 backend/package-lock.json
 frontend/package-lock.json
+package-lock.json
 backend/node_modules/.package-lock.json
 frontend/node_modules/.package-lock.json
 
