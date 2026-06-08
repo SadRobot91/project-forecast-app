@@ -1,0 +1,55 @@
+# ─── Dipendenze Node.js ───────────────────────────────────────────────────────
+backend/node_modules/
+frontend/node_modules/
+
+# ─── Build artifacts ──────────────────────────────────────────────────────────
+backend/dist/
+frontend/dist/
+
+# ─── Vite cache ───────────────────────────────────────────────────────────────
+frontend/node_modules/.vite/
+
+# ─── File di lock (rumore, raramente utili per analisi AI) ────────────────────
+backend/package-lock.json
+frontend/package-lock.json
+backend/node_modules/.package-lock.json
+frontend/node_modules/.package-lock.json
+
+# ─── Variabili d'ambiente con valori reali ────────────────────────────────────
+backend/.env
+frontend/.env.local
+.env
+.env.production
+.env.staging
+
+# ─── File sensibili / credenziali ─────────────────────────────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# ─── Database dump / backup ───────────────────────────────────────────────────
+*.sql.bak
+*.dump
+*.pgdump
+
+# ─── Log ──────────────────────────────────────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+
+# ─── OS / editor ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
+*.swo
+
+# ─── Coverage ─────────────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+
+# ─── TypeScript incremental build cache ───────────────────────────────────────
+*.tsbuildinfo
