@@ -5,10 +5,7 @@ import DateInput from '../components/DateInput';
 import ConfirmModal from '../components/ConfirmModal';
 import { fetchOngoing, fetchOngoingHistory, saveOngoing, deleteSnapshot, syncKeyedin } from '../api/ongoing';
 import type { OngoingData, OngoingSnapshot, OngoingPhaseOption } from '../types';
-
-function fmt(n: number) {
-  return `£${Math.round(n).toLocaleString('en-GB')}`;
-}
+import { formatCurrency } from '../utils/formatCurrency';
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -198,7 +195,7 @@ export default function Ongoing() {
       {showSaveConfirm && (
         <ConfirmModal
           title="Salva Snapshot"
-          message={`Stai per salvare uno snapshot alla data ${fmtDate(form.reporting_date)} con ${form.hours_spent_to_date}h e £${form.cost_spent_to_date} di costo. Confermi?`}
+          message={`Stai per salvare uno snapshot alla data ${fmtDate(form.reporting_date)} con ${form.hours_spent_to_date}h e ${formatCurrency(parseFloat(form.cost_spent_to_date))} di costo. Confermi?`}
           confirmLabel="Salva"
           loading={saving}
           onConfirm={handleSaveConfirmed}
@@ -255,20 +252,20 @@ export default function Ongoing() {
             </div>
             <div className="bg-surface border border-border rounded-2xl px-5 py-4 shadow-card">
               <p className="text-text-muted text-xs font-medium uppercase tracking-wider mb-1">Costo Speso</p>
-              <p className="text-xl font-bold text-text-primary">{fmt(snap.cost_spent_to_date)}</p>
-              <p className="text-text-dim text-xs mt-1">{budgetPct ?? '—'}% del budget {fmt(budgetTotal)}</p>
+              <p className="text-xl font-bold text-text-primary">{formatCurrency(snap.cost_spent_to_date)}</p>
+              <p className="text-text-dim text-xs mt-1">{budgetPct ?? '—'}% del budget {formatCurrency(budgetTotal)}</p>
             </div>
             <div className="bg-surface border border-border rounded-2xl px-5 py-4 shadow-card">
               <p className="text-text-muted text-xs font-medium uppercase tracking-wider mb-1">Costo / Ora</p>
               <p className="text-xl font-bold text-text-primary">
-                {costPerHour != null ? `£${costPerHour.toFixed(0)}` : '—'}
+                {costPerHour != null ? formatCurrency(Math.round(costPerHour)) : '—'}
               </p>
               <p className="text-text-dim text-xs mt-1">{snap.hours_spent_to_date}h registrate</p>
             </div>
             <div className="bg-surface border border-border rounded-2xl px-5 py-4 shadow-card">
               <p className="text-text-muted text-xs font-medium uppercase tracking-wider mb-1">Burn Rate Storico</p>
               <p className="text-xl font-bold text-text-primary">
-                {burnRateHistoric != null ? `${fmt(burnRateHistoric)}/gg` : '—'}
+                {burnRateHistoric != null ? `${formatCurrency(Math.round(burnRateHistoric))}/gg` : '—'}
               </p>
               <p className="text-text-dim text-xs mt-1">{snap.working_days_remaining} GG rimanenti</p>
             </div>
@@ -291,8 +288,8 @@ export default function Ongoing() {
               />
             </div>
             <div className="flex justify-between text-xs text-text-dim mt-1">
-              <span>{fmt(snap.cost_spent_to_date)} speso</span>
-              <span>{fmt(budgetTotal)} budget</span>
+              <span>{formatCurrency(snap.cost_spent_to_date)} speso</span>
+              <span>{formatCurrency(budgetTotal)} budget</span>
             </div>
           </div>
         )}
@@ -410,7 +407,7 @@ export default function Ongoing() {
                     <div>
                       <p className="text-sm font-medium text-text-primary">{fmtDate(s.reporting_date)}</p>
                       <p className="text-xs text-text-dim">
-                        {fmt(s.cost_spent_to_date)} · {s.hours_spent_to_date}h · {s.working_days_used} GG usati
+                        {formatCurrency(s.cost_spent_to_date)} · {s.hours_spent_to_date}h · {s.working_days_used} GG usati
                       </p>
                     </div>
                     <div className="text-right flex-shrink-0 ml-3 flex items-start gap-2">

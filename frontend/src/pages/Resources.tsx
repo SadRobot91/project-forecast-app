@@ -3,6 +3,7 @@ import AppNav from '../components/AppNav';
 import { fetchResourceRegistry } from '../api/allocation';
 import { fmtWeek } from '../utils/networkDays';
 import type { ResourceRegistryData, ResourceRegistryRow } from '../types';
+import { formatCurrency } from '../utils/formatCurrency';
 
 function fteSemaphore(total: number): { icon: string; class: string } {
   if (total === 0)     return { icon: '⚪', class: 'text-text-dim' };
@@ -40,7 +41,7 @@ function ResourceRow({ row, weeks, filterProject, getTotal }: ResourceRowProps) 
             <span className="text-text-dim text-xs">{expanded ? '▼' : '▶'}</span>
             <div>
               <p className="font-semibold text-text-primary">{row.resource.name}</p>
-              <p className="text-text-dim text-xs">{row.resource.role} · {row.resource.day_rate} £/gg</p>
+              <p className="text-text-dim text-xs">{row.resource.role} · {formatCurrency(row.resource.day_rate)}/gg</p>
             </div>
           </div>
         </td>

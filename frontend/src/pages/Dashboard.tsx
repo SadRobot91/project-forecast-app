@@ -5,10 +5,7 @@ import type { DashboardData, PhaseBudgetRow, MilestoneItem, PhaseFinancial } fro
 import RAGBadge from '../components/RAGBadge';
 import BudgetBar from '../components/BudgetBar';
 import AppNav from '../components/AppNav';
-
-function fmt(n: number) {
-  return `£${n.toLocaleString('en-GB', { maximumFractionDigits: 0 })}`;
-}
+import { formatCurrency } from '../utils/formatCurrency';
 
 function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -48,8 +45,8 @@ function PhaseBudgetTable({ rows, total }: { rows: PhaseBudgetRow[]; total: numb
               </td>
               <td className="px-4 py-3 text-text-primary">{r.working_days}</td>
               <td className="px-4 py-3 text-text-primary">{r.planned_hours}</td>
-              <td className="px-4 py-3 text-text-muted">{fmt(r.burn_rate_per_day)}</td>
-              <td className="px-4 py-3 font-medium text-text-primary">{fmt(r.budget)}</td>
+              <td className="px-4 py-3 text-text-muted">{formatCurrency(r.burn_rate_per_day)}</td>
+              <td className="px-4 py-3 font-medium text-text-primary">{formatCurrency(r.budget)}</td>
               <td className="px-4 py-3">
                 <div className="flex items-center gap-2">
                   <div className="w-16 h-1.5 bg-base rounded-full overflow-hidden">
@@ -64,7 +61,7 @@ function PhaseBudgetTable({ rows, total }: { rows: PhaseBudgetRow[]; total: numb
         <tfoot>
           <tr className="border-t-2 border-border bg-surface-2">
             <td colSpan={5} className="px-4 py-3 font-bold text-text-primary">TOTALE</td>
-            <td className="px-4 py-3 font-bold text-accent">{fmt(total)}</td>
+            <td className="px-4 py-3 font-bold text-accent">{formatCurrency(total)}</td>
             <td className="px-4 py-3 text-text-muted text-xs">100%</td>
           </tr>
         </tfoot>
@@ -130,11 +127,11 @@ function PhaseFinancialsTable({ rows }: { rows: PhaseFinancial[] }) {
           {rows.map((r, i) => (
             <tr key={r.phase_id} className={`border-b border-border/50 hover:bg-surface-2/60 transition-colors ${i % 2 === 0 ? 'bg-surface' : 'bg-surface/50'}`}>
               <td className="px-4 py-3 font-medium text-text-primary whitespace-nowrap">{r.display_name}</td>
-              <td className="px-4 py-3 text-text-primary">{fmt(r.budget)}</td>
-              <td className="px-4 py-3 text-text-primary">{fmt(r.cost_spent)}</td>
-              <td className="px-4 py-3 font-medium text-text-primary">{fmt(r.revised_forecast)}</td>
+              <td className="px-4 py-3 text-text-primary">{formatCurrency(r.budget)}</td>
+              <td className="px-4 py-3 text-text-primary">{formatCurrency(r.cost_spent)}</td>
+              <td className="px-4 py-3 font-medium text-text-primary">{formatCurrency(r.revised_forecast)}</td>
               <td className={`px-4 py-3 font-medium ${r.variance > 0 ? 'text-rag-red' : 'text-rag-green'}`}>
-                {r.variance > 0 ? '+' : ''}{fmt(r.variance)}
+                {r.variance > 0 ? '+' : ''}{formatCurrency(r.variance)}
               </td>
               <td className="px-4 py-3 text-text-muted">{fmtPct(r.pct_complete)}</td>
               <td className="px-4 py-3">
@@ -263,11 +260,11 @@ export default function Dashboard() {
 
         {/* KPI Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4">
-          <KPICard label="Speso" value={fmt(kpis.cost_spent)} sub={`${kpis.budget_pct}% del budget`} />
-          <KPICard label="Budget" value={fmt(kpis.budget_total)} />
-          <KPICard label="Previsione" value={fmt(kpis.revised_forecast)} accent sub={`Scostamento: ${fmt(kpis.variance)}`} />
-          <KPICard label="Costo/gg" value={fmt(kpis.daily_burn_rate)} sub="burn rate giornaliero" />
-          <KPICard label="Scostamento" value={fmt(kpis.variance)} sub={kpis.variance > 0 ? 'sopra budget' : 'sotto budget'} />
+          <KPICard label="Speso" value={formatCurrency(kpis.cost_spent)} sub={`${kpis.budget_pct}% del budget`} />
+          <KPICard label="Budget" value={formatCurrency(kpis.budget_total)} />
+          <KPICard label="Previsione" value={formatCurrency(kpis.revised_forecast)} sub={`Scostamento: ${formatCurrency(kpis.variance)}`} />
+          <KPICard label="Costo/gg" value={formatCurrency(kpis.daily_burn_rate)} sub="burn rate giornaliero" />
+          <KPICard label="Scostamento" value={formatCurrency(kpis.variance)} sub={kpis.variance > 0 ? 'sopra budget' : 'sotto budget'} />
           <KPICard label="Giorni rimasti" value={`${kpis.days_remaining}`} sub="giorni lavorativi" />
         </div>
 
@@ -275,7 +272,7 @@ export default function Dashboard() {
         <div className="bg-surface border border-border rounded-2xl p-5 shadow-card">
           <div className="flex justify-between items-center mb-3">
             <p className="font-semibold text-sm">Avanzamento Budget</p>
-            <p className="text-text-muted text-sm">{fmt(kpis.cost_spent)} / {fmt(kpis.budget_total)}</p>
+            <p className="text-text-muted text-sm">{formatCurrency(kpis.cost_spent)} / {formatCurrency(kpis.budget_total)}</p>
           </div>
           <BudgetBar pct={kpis.budget_pct} />
           <div className="flex justify-between text-xs text-text-dim mt-2">
@@ -350,7 +347,7 @@ export default function Dashboard() {
                     </div>
                     <div className="flex justify-between">
                       <span>Costo speso</span>
-                      <span className="text-text-primary font-medium">{fmt(kpis.cost_spent)}</span>
+                      <span className="text-text-primary font-medium">{formatCurrency(kpis.cost_spent)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span>Giorni usati</span>
