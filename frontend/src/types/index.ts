@@ -87,11 +87,29 @@ export interface MilestoneItem {
   is_milestone: boolean;
 }
 
+export interface PhaseFinancial {
+  phase_id: number;
+  phase_type: PhaseType;
+  display_name: string;
+  status: PhaseStatus;
+  budget: number;
+  cost_spent: number;
+  hours_spent: number;
+  working_days_used: number;
+  working_days_total: number;
+  pct_complete: number;
+  revised_forecast: number;
+  variance: number;
+  rag_status: RAGStatus;
+  forecast_basis: 'completed' | 'in_progress' | 'not_started';
+}
+
 export interface DashboardData {
   project_id: number;
   project_name: string;
   kpis: DashboardKPIs;
   phase_budgets: PhaseBudgetRow[];
+  phase_financials?: PhaseFinancial[];
   milestones: MilestoneItem[];
 }
 
