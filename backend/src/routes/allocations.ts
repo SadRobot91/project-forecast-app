@@ -1,13 +1,49 @@
 import { Router } from 'express';
-import { query } from '../db';
+import { query, withTransaction } from '../db';
+import type { QueryFn } from '../db';
 import { calculateNetworkDays } from '../services/computations';
-import { getWeeklyTotal } from '../services/allocationAggregator';
+import { canAllocate, getWeeklyTotal } from '../services/allocationAggregator';
+
+interface FteCapError extends Error {
+  code: 'FTE_CAP';
+  resource_id: number;
+  week_start: string;
+  excess: number;
+  breakdown: { project_id: number; project_name: string; fte: number }[];
+}
+
+function makeFteCapError(
+  resource_id: number,
+  week_start: string,
+  excess: number,
+  breakdown: { project_id: number; project_name: string; fte: number }[]
+): FteCapError {
+  const err = new Error('FTE cap exceeded') as FteCapError;
+  err.code = 'FTE_CAP';
+  err.resource_id = resource_id;
+  err.week_start = week_start;
+  err.excess = excess;
+  err.breakdown = breakdown;
+  return err;
+}
+
+function isFteCapError(err: unknown): err is FteCapError {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    (err as FteCapError).code === 'FTE_CAP'
+  );
+}
 
 const router = Router({ mergeParams: true });
 
 /** Compute working days within a phase that fall in the given ISO week (Mon–Sun). */
-async function calculatePhaseWeekWorkingDays(phaseId: string, weekStart: string): Promise<number> {
-  const phaseRes = await query('SELECT planned_start, planned_end FROM "ProjectPhase" WHERE id = $1', [phaseId]);
+async function calculatePhaseWeekWorkingDays(
+  phaseId: string,
+  weekStart: string,
+  q: QueryFn = query
+): Promise<number> {
+  const phaseRes = await q('SELECT planned_start, planned_end FROM "ProjectPhase" WHERE id = $1', [phaseId]);
   if (!phaseRes.rowCount) throw new Error('Phase not found');
   const phase = phaseRes.rows[0];
   if (!phase.planned_start || !phase.planned_end) return 0;
@@ -132,35 +168,89 @@ router.put('/', async (req, res) => {
     // mutable. The locked baseline is preserved as a snapshot on the
     // Baseline row (total_budget_at_lock + phase_snapshot_at_lock), so
     // updates here do not retroactively alter the BAC.
-    await query('BEGIN');
-    await query('DELETE FROM "AllocationEntry" WHERE project_id = $1 AND phase_id = $2', [projectId, phase_id]);
-
-    const inserted = [];
-    for (const alloc of allocations) {
-      const { resource_id, week_start, fte } = alloc;
-
-      const resQuery = await query('SELECT day_rate FROM "Resource" WHERE id = $1', [resource_id]);
-      if (!resQuery.rowCount) throw new Error(`Resource ${resource_id} not found`);
-      const dayRate = parseFloat(resQuery.rows[0].day_rate);
-
-      const workingDays = await calculatePhaseWeekWorkingDays(phase_id, week_start);
-      const weeklyCost = dayRate * fte * workingDays;
-
-      const result = await query(
-        `INSERT INTO "AllocationEntry"
-         (resource_id, project_id, phase_id, week_start, fte, working_days, weekly_cost)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-        [resource_id, projectId, phase_id, week_start, fte, workingDays, weeklyCost]
+    const inserted = await withTransaction(async (q: QueryFn) => {
+      // 1. Acquire advisory locks in deterministic order to prevent deadlocks.
+      type LockPair = { resource_id: number; week_start: string; week_epoch: number };
+      const seen = new Set<string>();
+      const lockPairs: LockPair[] = [];
+      for (const alloc of allocations) {
+        const key = `${alloc.resource_id}:${alloc.week_start}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          const week_epoch = Math.floor(new Date(alloc.week_start).getTime() / 86400000);
+          lockPairs.push({ resource_id: Number(alloc.resource_id), week_start: alloc.week_start, week_epoch });
+        }
+      }
+      lockPairs.sort((a, b) =>
+        a.resource_id !== b.resource_id ? a.resource_id - b.resource_id : a.week_epoch - b.week_epoch
       );
-      inserted.push(result.rows[0]);
-    }
+      for (const pair of lockPairs) {
+        await q('SELECT pg_advisory_xact_lock($1, $2)', [pair.resource_id, pair.week_epoch]);
+      }
 
-    await query('COMMIT');
+      // 2. Delete existing allocations for this phase.
+      await q('DELETE FROM "AllocationEntry" WHERE project_id = $1 AND phase_id = $2', [projectId, phase_id]);
+
+      // 3. Aggregate requested FTE per (resource_id, week_start).
+      const fteMap = new Map<string, number>();
+      for (const alloc of allocations) {
+        const key = `${alloc.resource_id}:${alloc.week_start}`;
+        fteMap.set(key, (fteMap.get(key) ?? 0) + alloc.fte);
+      }
+
+      // 4. Check FTE cap for each (resource, week) pair.
+      for (const [key, totalFte] of fteMap) {
+        const [rid, ws] = key.split(':');
+        const resource_id = Number(rid);
+        const decision = await canAllocate(resource_id, ws, totalFte, { query: q });
+        if (!decision.ok) {
+          throw makeFteCapError(
+            resource_id,
+            ws,
+            decision.excess!,
+            decision.breakdown!
+          );
+        }
+      }
+
+      // 5. Insert the new allocation entries.
+      const rows = [];
+      for (const alloc of allocations) {
+        const { resource_id, week_start, fte } = alloc;
+
+        const resResult = await q('SELECT day_rate FROM "Resource" WHERE id = $1', [resource_id]);
+        if (!resResult.rowCount) throw new Error(`Resource ${resource_id} not found`);
+        const dayRate = parseFloat(resResult.rows[0].day_rate);
+
+        const workingDays = await calculatePhaseWeekWorkingDays(phase_id, week_start, q);
+        const weeklyCost = dayRate * fte * workingDays;
+
+        const result = await q(
+          `INSERT INTO "AllocationEntry"
+           (resource_id, project_id, phase_id, week_start, fte, working_days, weekly_cost)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+          [resource_id, projectId, phase_id, week_start, fte, workingDays, weeklyCost]
+        );
+        rows.push(result.rows[0]);
+      }
+
+      return rows;
+    });
+
     res.json(inserted);
-  } catch (err: any) {
-    await query('ROLLBACK');
+  } catch (err: unknown) {
     console.error(err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    if (isFteCapError(err)) {
+      return res.status(409).json({
+        error: 'FTE cap exceeded',
+        resource_id: err.resource_id,
+        week_start: err.week_start,
+        excess: err.excess,
+        breakdown: err.breakdown,
+      });
+    }
+    const message = err instanceof Error ? err.message : 'Internal server error';
+    res.status(500).json({ error: message });
   }
 });
 
