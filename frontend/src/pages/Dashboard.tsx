@@ -5,6 +5,7 @@ import type { DashboardData, PhaseBudgetRow, MilestoneItem, PhaseFinancial } fro
 import RAGBadge from '../components/RAGBadge';
 import BudgetBar from '../components/BudgetBar';
 import AppNav from '../components/AppNav';
+import SimilarProjects from '../components/SimilarProjects';
 import { formatCurrency } from '../utils/formatCurrency';
 
 function fmtPct(n: number) { return (n * 100).toFixed(0) + '%'; }
@@ -408,6 +409,16 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+
+        {/* KG-2: Progetti simili */}
+        {data && data.kpis && (
+          <div className="mt-6">
+            <SimilarProjects
+              projectId={parseInt(id ?? '0', 10)}
+              tags={(data as any).tags ?? []}
+            />
+          </div>
+        )}
 
       </main>
     </div>

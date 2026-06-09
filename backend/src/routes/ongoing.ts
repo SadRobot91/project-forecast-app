@@ -73,18 +73,22 @@ router.post('/', async (req, res) => {
   if (hours_spent_to_date === undefined || hours_spent_to_date === null || isNaN(parseFloat(hours_spent_to_date))) {
     return res.status(400).json({ error: 'hours_spent_to_date is required and must be a number' });
   }
+  if (phase_id === undefined || phase_id === null) {
+    return res.status(400).json({ error: 'phase_id is required — snapshots must be linked to a specific phase' });
+  }
 
-  const resolvedPhaseId: number | null = (phase_id !== undefined && phase_id !== null) ? parseInt(phase_id, 10) : null;
+  const resolvedPhaseId = parseInt(phase_id, 10);
+  if (isNaN(resolvedPhaseId)) {
+    return res.status(400).json({ error: 'phase_id must be a valid integer' });
+  }
 
   try {
-    if (resolvedPhaseId !== null) {
-      const phaseCheck = await query(
-        'SELECT 1 FROM "ProjectPhase" WHERE id = $1 AND project_id = $2',
-        [resolvedPhaseId, projectId]
-      );
-      if (!phaseCheck.rowCount) {
-        return res.status(400).json({ error: 'phase_id does not belong to this project' });
-      }
+    const phaseCheck = await query(
+      'SELECT 1 FROM "ProjectPhase" WHERE id = $1 AND project_id = $2',
+      [resolvedPhaseId, projectId]
+    );
+    if (!phaseCheck.rowCount) {
+      return res.status(400).json({ error: 'phase_id does not belong to this project' });
     }
 
     const data: SnapshotData = {

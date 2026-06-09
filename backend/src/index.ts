@@ -11,6 +11,7 @@ import projectsRouter from './routes/projects';
 import dashboardRouter from './routes/dashboard';
 import phaseTemplatesRouter from './routes/phaseTemplates';
 import authRouter from './routes/auth';
+import knowledgeRouter from './routes/knowledge';
 import { requireAuth } from './middleware/requireAuth';
 
 dotenv.config();
@@ -24,6 +25,7 @@ app.use(cors());
 app.use('/api/auth', authRouter);
 
 app.use('/api/projects', requireAuth, projectsRouter);
+app.use('/api/projects/:id', requireAuth, knowledgeRouter);
 app.use('/api/resources', requireAuth, resourcesRouter);
 app.use('/api/projects/:id/dashboard', requireAuth, dashboardRouter);
 app.use('/api/projects/:id/baseline', requireAuth, baselineRouter);

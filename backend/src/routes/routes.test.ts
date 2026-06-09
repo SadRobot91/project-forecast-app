@@ -248,12 +248,11 @@ describe('GET /api/resources/registry', () => {
   // Step B: PUT /resources/:id always proceeds. The locked BAC is
   // protected by the snapshot, not by blocking day_rate changes.
   describe('PUT /api/resources/:id', () => {
-    it('updates day_rate even when resource is allocated on a locked baseline', async () => {
-      // resources.ts uses manual BEGIN/COMMIT + Step G cascade query
-      mockQuery.mockResolvedValueOnce(dbOk([])); // BEGIN
+    it('updates day_rate, records history, and cascades only to future entries', async () => {
+      // withTransaction calls fn(mockQuery) directly — no BEGIN/COMMIT through mockQuery
       mockQuery.mockResolvedValueOnce(dbOk([{ id: 2, name: 'Vishal', role: 'Dev', day_rate: '700' }])); // UPDATE Resource RETURNING
-      mockQuery.mockResolvedValueOnce(dbOk([], 0)); // UPDATE AllocationEntry (Step G cascade)
-      mockQuery.mockResolvedValueOnce(dbOk([])); // COMMIT
+      mockQuery.mockResolvedValueOnce(dbOk([])); // INSERT ResourceDayRateHistory
+      mockQuery.mockResolvedValueOnce(dbOk([], 0)); // UPDATE AllocationEntry (future only)
 
       const res = await request(app)
         .put('/api/resources/2')
@@ -262,7 +261,20 @@ describe('GET /api/resources/registry', () => {
       expect(res.status).toBe(200);
       expect(parseFloat(res.body.day_rate)).toBe(700);
 
-      // The locked-baseline join must NOT be issued any more
+      // History INSERT must target ResourceDayRateHistory
+      const historyCall = mockQuery.mock.calls.find((c: any[]) =>
+        typeof c[0] === 'string' && c[0].includes('ResourceDayRateHistory')
+      );
+      expect(historyCall).toBeDefined();
+
+      // Cascade must be limited to current/future entries only
+      const cascadeCall = mockQuery.mock.calls.find((c: any[]) =>
+        typeof c[0] === 'string' && c[0].includes('UPDATE "AllocationEntry"')
+      );
+      expect(cascadeCall).toBeDefined();
+      expect(cascadeCall![0]).toContain("week_start >= DATE_TRUNC('week', CURRENT_DATE)");
+
+      // The locked-baseline join must NOT be issued
       const lockCheck = mockQuery.mock.calls.find((c: any[]) =>
         typeof c[0] === 'string' && c[0].includes('locked_at IS NOT NULL')
       );
@@ -906,9 +918,8 @@ describe('PUT /api/resources/:id — validation and 404', () => {
   });
 
   it('returns 404 when resource not found', async () => {
-    mockQuery.mockResolvedValueOnce(dbOk([]));          // BEGIN
+    // withTransaction calls fn(mockQuery) directly — ROLLBACK handled by withTransaction internally
     mockQuery.mockResolvedValueOnce(dbOk([], 0));       // UPDATE Resource → rowCount 0
-    mockQuery.mockResolvedValueOnce(dbOk([]));          // ROLLBACK
     const res = await request(app).put('/api/resources/99').send({ name: 'Ghost', day_rate: 500 });
     expect(res.status).toBe(404);
   });
@@ -1152,5 +1163,171 @@ describe('GET /api/projects — PM role filter', () => {
     expect(sql).toContain('WHERE p.pm_id = $1');
     const params: any[] = mockQuery.mock.calls[0][1];
     expect(params[0]).toBe(42);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ONGOING — POST snapshot requires phase_id (Bug 2.1 fix)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('POST /api/projects/:id/ongoing — phase_id enforcement', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    jest.mock('../services/ongoing/ManualFallbackProvider', () => ({
+      ManualFallbackProvider: jest.fn().mockImplementation(() => ({
+        getLatestSnapshot: jest.fn(),
+        getHistory: jest.fn(),
+        saveSnapshot: jest.fn().mockResolvedValue({ id: 1 }),
+      })),
+    }));
+    jest.mock('../services/ongoing/KeyedinApiProvider', () => ({
+      KeyedinApiProvider: jest.fn().mockImplementation(() => ({
+        syncData: jest.fn(),
+      })),
+    }));
+    const { default: router } = await import('./ongoing');
+    const outer = express();
+    outer.use(express.json());
+    outer.use('/api/projects/:id/ongoing', router);
+    app = outer;
+  });
+
+  it('returns 400 when phase_id is missing', async () => {
+    const res = await request(app)
+      .post('/api/projects/1/ongoing')
+      .send({ reporting_date: '2026-06-09', cost_spent_to_date: 50000, hours_spent_to_date: 400 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('phase_id');
+  });
+
+  it('returns 400 when phase_id is null', async () => {
+    const res = await request(app)
+      .post('/api/projects/1/ongoing')
+      .send({ reporting_date: '2026-06-09', cost_spent_to_date: 50000, hours_spent_to_date: 400, phase_id: null });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('phase_id');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// KNOWLEDGE GRAPH routes
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('Knowledge Graph routes', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./knowledge');
+    const outer = express();
+    outer.use(express.json());
+    outer.use('/api/projects/:id', router);
+    app = outer;
+  });
+
+  describe('POST /api/projects/:id/decisions', () => {
+    it('returns 201 on valid decision', async () => {
+      mockQuery.mockResolvedValueOnce(dbOk([{ id: 1 }])); // project check
+      mockQuery.mockResolvedValueOnce(dbOk([{
+        id: 1, project_id: 1, title: 'Usa microservizi', rationale: 'scalabilità',
+        expected_consequence: null, phase_id: null, decided_at: new Date().toISOString(), created_at: new Date().toISOString()
+      }])); // INSERT
+      const res = await request(app).post('/api/projects/1/decisions').send({ title: 'Usa microservizi', rationale: 'scalabilità' });
+      expect(res.status).toBe(201);
+      expect(res.body.title).toBe('Usa microservizi');
+    });
+
+    it('returns 400 when title is missing', async () => {
+      const res = await request(app).post('/api/projects/1/decisions').send({ rationale: 'test' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('title');
+    });
+
+    it('returns 404 when project not found', async () => {
+      mockQuery.mockResolvedValueOnce(dbOk([], 0)); // project check → not found
+      const res = await request(app).post('/api/projects/999/decisions').send({ title: 'Test' });
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('POST /api/projects/:id/slippage', () => {
+    it('returns 201 with expected=false and cause', async () => {
+      mockQuery.mockResolvedValueOnce(dbOk([{ id: 1 }]));
+      mockQuery.mockResolvedValueOnce(dbOk([{ id: 1, project_id: 1, expected: false, cause: 'Scope creep', phase_id: null }]));
+      const res = await request(app).post('/api/projects/1/slippage').send({ expected: false, cause: 'Scope creep' });
+      expect(res.status).toBe(201);
+      expect(res.body.expected).toBe(false);
+    });
+
+    it('returns 400 when expected is missing', async () => {
+      const res = await request(app).post('/api/projects/1/slippage').send({ cause: 'Test' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('expected');
+    });
+  });
+
+  describe('POST /api/projects/:id/retrospectives', () => {
+    it('returns 201 with valid answer', async () => {
+      mockQuery.mockResolvedValueOnce(dbOk([{ id: 1 }]));
+      mockQuery.mockResolvedValueOnce(dbOk([{ id: 1, project_id: 1, question: 'Cosa è andato bene?', answer: 'Team collaborativo', phase_id: null }]));
+      const res = await request(app).post('/api/projects/1/retrospectives').send({ question: 'Cosa è andato bene?', answer: 'Team collaborativo' });
+      expect(res.status).toBe(201);
+      expect(res.body.answer).toBe('Team collaborativo');
+    });
+
+    it('returns 400 when answer is missing', async () => {
+      const res = await request(app).post('/api/projects/1/retrospectives').send({ question: 'Test' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('answer');
+    });
+  });
+
+  describe('PATCH /api/projects/:id (scoping)', () => {
+    it('updates description and tags', async () => {
+      mockQuery.mockResolvedValueOnce(dbOk([{ id: 1, name: 'RXI', description: 'Piattaforma', tags: ['microservizi'] }]));
+      const res = await request(app).patch('/api/projects/1').send({ description: 'Piattaforma', tags: ['microservizi'] });
+      expect(res.status).toBe(200);
+      expect(res.body.description).toBe('Piattaforma');
+    });
+
+    it('returns 400 when no fields provided', async () => {
+      const res = await request(app).patch('/api/projects/1').send({});
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 404 when project not found', async () => {
+      mockQuery.mockResolvedValueOnce(dbOk([], 0));
+      const res = await request(app).patch('/api/projects/999').send({ description: 'Test' });
+      expect(res.status).toBe(404);
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GET /api/projects/similar
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('GET /api/projects/similar', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./projects');
+    app = makeApp(router, '/api/projects');
+  });
+
+  it('returns empty array when no tags provided', async () => {
+    const res = await request(app).get('/api/projects/similar');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('returns projects ordered by matching_tag_count DESC', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([
+      { id: 2, name: 'Alpha', status: 'closed', tags: ['microservizi', 'react'], description: null, matching_tag_count: 2 },
+      { id: 3, name: 'Beta',  status: 'active', tags: ['microservizi'],         description: null, matching_tag_count: 1 },
+    ]));
+    const res = await request(app).get('/api/projects/similar?tags[]=microservizi&tags[]=react&exclude_id=1');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body[0].matching_tag_count).toBeGreaterThanOrEqual(res.body[1].matching_tag_count);
+    const sql: string = mockQuery.mock.calls[0][0];
+    expect(sql).toContain('?|');
   });
 });

@@ -3,3 +3,7 @@ packages:
   - 'packages/*'
   - 'frontend'
   - 'backend'
+allowBuilds:
+  esbuild: false
+  nx: false
+  unrs-resolver: false

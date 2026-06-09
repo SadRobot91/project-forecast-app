@@ -57,8 +57,9 @@ router.get('/', async (req, res) => {
     const phases = phasesRes.rows;
     const totalBudget       = rollup.total_budget;
     const totalWorkingDays  = phases.reduce((s: number, p: any) => s + (p.working_days ?? 0), 0);
-    const costSpent         = ongoing ? parseFloat(ongoing.cost_spent_to_date) : 0;
-    const hoursSpent        = ongoing ? parseFloat(ongoing.hours_spent_to_date) : 0;
+    // Use rollup to avoid contradiction between project-level snapshot and phase-level engine
+    const costSpent         = rollup.total_cost_spent;
+    const hoursSpent        = rollup.total_hours_spent;
     const dailyBurnRate     = totalWorkingDays > 0 ? totalBudget / totalWorkingDays : 0;
 
     let daysRemaining = totalWorkingDays;
@@ -112,7 +113,7 @@ router.get('/', async (req, res) => {
         last_sync_at:           ongoing?.created_at ?? null,
         last_sync_source:       ongoing?.source ?? null,
         hours_spent_to_date:    hoursSpent,
-        working_days_used:      ongoing?.working_days_used ?? 0,
+        working_days_used:      rollup.total_working_days_used,
       },
       phase_budgets: phaseBudgets,
       phase_financials: rollup.phases,

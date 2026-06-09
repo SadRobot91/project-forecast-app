@@ -4,6 +4,7 @@ import AppNav from '../components/AppNav';
 import ConfirmModal from '../components/ConfirmModal';
 import DateInput from '../components/DateInput';
 import FTECell from '../components/FTECell';
+import SlippageModal from '../components/SlippageModal';
 import { fetchBaseline, saveBaseline, lockBaseline } from '../api/baseline';
 import { fetchAllocation, saveAllocationPhase, createResource, fetchResourceRegistry } from '../api/allocation';
 import { networkDays, weeksInRange, fmtWeek } from '../utils/networkDays';
@@ -48,11 +49,12 @@ interface FasiTabProps {
   onUpdateName: (phaseId: number, val: string) => void;
   onSave: () => void;
   onShowLockModal: () => void;
+  onRegisterSlippage: (phase: { id: number; name: string }) => void;
 }
 
 function FasiTab({
   phases, isLocked, lockedAt, saveLoading, saveError, saved,
-  onUpdatePhase, onUpdateContingency, onUpdateName, onSave, onShowLockModal,
+  onUpdatePhase, onUpdateContingency, onUpdateName, onSave, onShowLockModal, onRegisterSlippage,
 }: FasiTabProps) {
   const [editingName, setEditingName] = useState<Record<number, string>>({});
 
@@ -126,7 +128,7 @@ function FasiTab({
                 <th className="sticky left-0 bg-surface-2 z-10 text-left text-text-muted font-medium px-4 py-3 text-xs uppercase tracking-wider whitespace-nowrap">
                   Fase
                 </th>
-                {['Inizio', 'Fine', 'GG Lavorativi *', 'Ore Pianificate', 'Budget £', 'Contingenza %'].map((h) => (
+                {['Inizio', 'Fine', 'GG Lavorativi *', 'Ore Pianificate', 'Budget £', 'Contingenza %', ''].map((h) => (
                   <th key={h} className="text-left text-text-muted font-medium px-4 py-3 text-xs uppercase tracking-wider whitespace-nowrap">
                     {h}
                   </th>
@@ -196,6 +198,16 @@ function FasiTab({
                       )}
                     </div>
                   </td>
+                  <td className="px-4 py-3">
+                    {row.status === 'in_progress' && (
+                      <button
+                        onClick={() => onRegisterSlippage({ id: row.phase_id, name: row.display_name })}
+                        className="text-xs text-text-dim border border-border rounded px-2 py-1 hover:border-accent/50 hover:text-accent transition-colors whitespace-nowrap"
+                      >
+                        Registra slittamento
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -206,6 +218,7 @@ function FasiTab({
                 <td className="px-4 py-3 font-bold text-accent">{totalWD}</td>
                 <td className="px-4 py-3 font-bold text-accent">{totalHours}</td>
                 <td className="px-4 py-3 font-bold text-accent">{formatCurrency(totalBudget)}</td>
+                <td className="px-4 py-3" />
                 <td className="px-4 py-3" />
               </tr>
             </tfoot>
@@ -539,6 +552,9 @@ export default function Pianificazione() {
   const [allocData, setAllocData] = useState<AllocationData | null>(null);
   const [crossTotals, setCrossTotals] = useState<Record<string, number>>({});
 
+  // slippage state
+  const [slippagePhase, setSlippagePhase] = useState<{ id: number; name: string } | null>(null);
+
   const loadAll = useCallback(() => {
     if (!projectId) return;
     Promise.all([
@@ -705,6 +721,7 @@ export default function Pianificazione() {
             onUpdateName={updateName}
             onSave={handleSave}
             onShowLockModal={() => setShowLockModal(true)}
+            onRegisterSlippage={setSlippagePhase}
           />
         ) : (
           <div className="space-y-5">
@@ -739,6 +756,15 @@ export default function Pianificazione() {
           </div>
         )}
       </main>
+
+      {slippagePhase !== null && (
+        <SlippageModal
+          projectId={parseInt(projectId ?? '0', 10)}
+          phaseId={slippagePhase.id}
+          phaseName={slippagePhase.name}
+          onClose={() => setSlippagePhase(null)}
+        />
+      )}
     </div>
   );
 }

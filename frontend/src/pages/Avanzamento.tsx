@@ -158,6 +158,12 @@ export default function Ongoing() {
 
   const phases: OngoingPhaseOption[] = data?.phases ?? [];
 
+  useEffect(() => {
+    if (selectedPhaseId === null && phases.length > 0) {
+      setSelectedPhaseId(phases[0].id);
+    }
+  }, [phases, selectedPhaseId]);
+
   function phaseLabel(phaseId: number | null): string {
     if (phaseId === null) return 'Progetto';
     const found = phases.find((p) => p.id === phaseId);
@@ -311,7 +317,6 @@ export default function Ongoing() {
                   }}
                   className="w-full bg-base border border-border text-text-primary rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-accent"
                 >
-                  <option value="">Progetto (aggregato)</option>
                   {phases.map((p) => (
                     <option key={p.id} value={p.id}>{p.display_name}</option>
                   ))}

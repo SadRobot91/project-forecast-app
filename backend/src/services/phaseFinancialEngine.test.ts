@@ -20,10 +20,10 @@ describe('computeProjectFinancials', () => {
     const q = makeStubQuery([
       // phases query
       { rows: [{ id: 10, phase_type: 'feasibility', display_name: 'Feasibility', status: 'completed', working_days: 12, planned_hours: 96, contingency_pct: 0 }] },
-      // budget query for phase 10
-      { rows: [{ budget: '4080' }] },
-      // snapshot query for phase 10
-      { rows: [{ cost_spent_to_date: '4200', hours_spent_to_date: '80', working_days_used: 12 }] },
+      // budget batch for [10]
+      { rows: [{ phase_id: 10, budget: '4080' }] },
+      // snapshot batch for project (phase_id 10)
+      { rows: [{ phase_id: 10, cost_spent_to_date: '4200', hours_spent_to_date: '80', working_days_used: 12 }] },
     ]);
 
     const rollup = await computeProjectFinancials(1, { query: q });
@@ -43,10 +43,10 @@ describe('computeProjectFinancials', () => {
     const q = makeStubQuery([
       // phases
       { rows: [{ id: 20, phase_type: 'build', display_name: 'Build', status: 'in_progress', working_days: 80, planned_hours: 640, contingency_pct: 0 }] },
-      // budget
-      { rows: [{ budget: '41600' }] },
-      // snapshot: 58 days used, cost = 36200, hours = 320
-      { rows: [{ cost_spent_to_date: '36200', hours_spent_to_date: '320', working_days_used: 58 }] },
+      // budget batch for [20]
+      { rows: [{ phase_id: 20, budget: '41600' }] },
+      // snapshot batch for project (phase_id 20): 58 days used, cost = 36200, hours = 320
+      { rows: [{ phase_id: 20, cost_spent_to_date: '36200', hours_spent_to_date: '320', working_days_used: 58 }] },
     ]);
 
     const rollup = await computeProjectFinancials(1, { query: q });
@@ -71,9 +71,11 @@ describe('computeProjectFinancials', () => {
     const q = makeStubQuery([
       // phases
       { rows: [{ id: 30, phase_type: 'deployment', display_name: 'Deployment', status: 'not_started', working_days: 15, planned_hours: 120, contingency_pct: 0 }] },
-      // budget
-      { rows: [{ budget: '6000' }] },
-      // no snapshot
+      // budget batch for [30]
+      { rows: [{ phase_id: 30, budget: '6000' }] },
+      // snapshot batch: no per-phase snapshots
+      { rows: [] },
+      // legacy fallback: no project-level snapshots either
       { rows: [] },
     ]);
 
@@ -97,14 +99,10 @@ describe('computeProjectFinancials', () => {
           { id: 2, phase_type: 'closure',     display_name: 'Closure',     status: 'not_started', working_days: 8, planned_hours: 64, contingency_pct: 0 },
         ],
       },
-      // budget phase 1
-      { rows: [{ budget: '4080' }] },
-      // snapshot phase 1 (completed)
-      { rows: [{ cost_spent_to_date: '4200', hours_spent_to_date: '80', working_days_used: 12 }] },
-      // budget phase 2
-      { rows: [{ budget: '2600' }] },
-      // snapshot phase 2 (not_started, no data)
-      { rows: [] },
+      // budget batch for [1, 2]
+      { rows: [{ phase_id: 1, budget: '4080' }, { phase_id: 2, budget: '2600' }] },
+      // snapshot batch: only phase 1 has a snapshot (completed)
+      { rows: [{ phase_id: 1, cost_spent_to_date: '4200', hours_spent_to_date: '80', working_days_used: 12 }] },
     ]);
 
     const rollup = await computeProjectFinancials(1, { query: q });
@@ -121,7 +119,11 @@ describe('computeProjectFinancials', () => {
   it('zero budget and zero forecast: RAG is IN_LINEA', async () => {
     const q = makeStubQuery([
       { rows: [{ id: 99, phase_type: 'feasibility', display_name: 'Feasibility', status: 'not_started', working_days: 0, planned_hours: 0, contingency_pct: 0 }] },
-      { rows: [{ budget: '0' }] },
+      // budget batch for [99]
+      { rows: [{ phase_id: 99, budget: '0' }] },
+      // snapshot batch: no per-phase snapshots
+      { rows: [] },
+      // legacy fallback: no project-level snapshots either
       { rows: [] },
     ]);
 

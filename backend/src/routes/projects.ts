@@ -12,7 +12,7 @@ router.get('/', async (req, res) => {
     const params = isPm ? [req.auth!.userId] : [];
 
     const result = await query(
-      `SELECT p.id, p.name, p.status, p.currency,
+      `SELECT p.id, p.name, p.status, p.currency, p.description, p.tags,
               ph.phase_type as current_phase,
               ph.display_name as current_phase_display_name,
               COALESCE((
@@ -21,18 +21,22 @@ router.get('/', async (req, res) => {
                 WHERE ae.project_id = p.id
               ), 0)::numeric as budget_total,
               COALESCE((
-                SELECT os.cost_spent_to_date
-                FROM "OngoingSnapshot" os
-                WHERE os.project_id = p.id
-                ORDER BY os.reporting_date DESC, os.created_at DESC
-                LIMIT 1
+                SELECT SUM(latest.cost_spent_to_date)
+                FROM (
+                  SELECT DISTINCT ON (os.phase_id) os.cost_spent_to_date
+                  FROM "OngoingSnapshot" os
+                  WHERE os.project_id = p.id AND os.phase_id IS NOT NULL
+                  ORDER BY os.phase_id, os.reporting_date DESC, os.created_at DESC
+                ) latest
               ), 0)::numeric as budget_spent,
               COALESCE((
-                SELECT os2.hours_spent_to_date
-                FROM "OngoingSnapshot" os2
-                WHERE os2.project_id = p.id
-                ORDER BY os2.reporting_date DESC, os2.created_at DESC
-                LIMIT 1
+                SELECT SUM(latest.hours_spent_to_date)
+                FROM (
+                  SELECT DISTINCT ON (os2.phase_id) os2.hours_spent_to_date
+                  FROM "OngoingSnapshot" os2
+                  WHERE os2.project_id = p.id AND os2.phase_id IS NOT NULL
+                  ORDER BY os2.phase_id, os2.reporting_date DESC, os2.created_at DESC
+                ) latest
               ), 0)::numeric as hours_spent,
               COALESCE((
                 SELECT os3.working_days_remaining
@@ -59,7 +63,7 @@ router.get('/', async (req, res) => {
        FROM "Project" p
        LEFT JOIN "ProjectPhase" ph ON ph.project_id = p.id AND ph.status = 'in_progress'
        ${pmFilter}
-       GROUP BY p.id, p.name, p.status, p.currency, ph.phase_type, ph.display_name
+       GROUP BY p.id, p.name, p.status, p.currency, p.description, p.tags, ph.phase_type, ph.display_name
        ORDER BY p.id`,
       params
     );
@@ -109,10 +113,50 @@ router.get('/', async (req, res) => {
         budget_pct: budgetPct,
         days_remaining: daysRemaining,
         currency: r.currency ?? 'GBP',
+        description: r.description ?? null,
+        tags: r.tags ?? [],
       };
     });
 
     res.json(projects);
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message || 'Internal server error' });
+  }
+});
+
+// GET /api/projects/similar?tags[]=tag1&tags[]=tag2&exclude_id=N
+router.get('/similar', async (req, res) => {
+  const rawTags = req.query['tags[]'] ?? req.query.tags;
+  const excludeId = req.query.exclude_id ? parseInt(req.query.exclude_id as string, 10) : null;
+
+  const tags: string[] = Array.isArray(rawTags)
+    ? (rawTags as string[]).filter(Boolean)
+    : rawTags ? [rawTags as string] : [];
+
+  if (tags.length === 0) {
+    return res.json([]);
+  }
+
+  try {
+    const result = await query(
+      `SELECT p.id, p.name, p.status, p.tags, p.description,
+              (SELECT count(*)::int FROM jsonb_array_elements_text(p.tags) t WHERE t = ANY($1::text[])) AS matching_tag_count
+       FROM "Project" p
+       WHERE ($2::int IS NULL OR p.id != $2)
+         AND p.tags ?| $1::text[]
+       ORDER BY (SELECT count(*) FROM jsonb_array_elements_text(p.tags) t WHERE t = ANY($1::text[])) DESC
+       LIMIT 5`,
+      [tags, excludeId]
+    );
+    res.json(result.rows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      status: r.status,
+      tags: r.tags ?? [],
+      description: r.description ?? null,
+      matching_tag_count: r.matching_tag_count,
+    })));
   } catch (err: any) {
     console.error(err);
     res.status(500).json({ error: err.message || 'Internal server error' });

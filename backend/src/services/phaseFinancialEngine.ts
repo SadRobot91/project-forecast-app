@@ -26,6 +26,8 @@ export interface ProjectFinancialRollup {
   phases: PhaseFinancial[];
   total_budget: number;
   total_cost_spent: number;
+  total_hours_spent: number;
+  total_working_days_used: number;
   total_revised_forecast: number;
   total_variance: number;
   rag_status: RAGStatus;
@@ -46,31 +48,57 @@ export async function computeProjectFinancials(
     [projectId]
   );
 
+  const phaseIds: number[] = phasesRes.rows.map((r: any) => r.id);
+
+  // Budget per tutte le fasi in una query
+  const budgetBatchRes = await q(
+    `SELECT ae.phase_id, COALESCE(SUM(ae.weekly_cost), 0)::numeric AS budget
+     FROM "AllocationEntry" ae
+     WHERE ae.phase_id = ANY($1::int[])
+     GROUP BY ae.phase_id`,
+    [phaseIds]
+  );
+  const budgetMap = new Map<number, number>(
+    budgetBatchRes.rows.map((r: any) => [r.phase_id as number, parseFloat(r.budget)])
+  );
+
+  // Snapshot più recente per ciascuna fase in una query
+  const snapshotBatchRes = await q(
+    `SELECT DISTINCT ON (phase_id)
+            phase_id, hours_spent_to_date, cost_spent_to_date, working_days_used
+     FROM "OngoingSnapshot"
+     WHERE project_id = $1 AND phase_id IS NOT NULL
+     ORDER BY phase_id, reporting_date DESC, created_at DESC`,
+    [projectId]
+  );
+  const snapshotMap = new Map<number, any>(
+    snapshotBatchRes.rows.map((r: any) => [r.phase_id as number, r])
+  );
+
+  // Fallback for projects that predate phase_id enforcement (snapshots with phase_id NULL).
+  // Only queried when there are no per-phase snapshots at all.
+  let legacySnapshot: any = null;
+  if (snapshotMap.size === 0 && phaseIds.length > 0) {
+    const legacyRes = await q(
+      `SELECT cost_spent_to_date, hours_spent_to_date, working_days_used
+       FROM "OngoingSnapshot"
+       WHERE project_id = $1 AND phase_id IS NULL
+       ORDER BY reporting_date DESC, created_at DESC
+       LIMIT 1`,
+      [projectId]
+    );
+    if (legacyRes.rows.length > 0) {
+      legacySnapshot = legacyRes.rows[0];
+    }
+  }
+
   const phases: PhaseFinancial[] = [];
 
   for (const row of phasesRes.rows) {
     const phaseId: number = row.id;
 
-    // Budget from allocations
-    const budgetRes = await q(
-      `SELECT COALESCE(SUM(ae.weekly_cost), 0)::numeric AS budget
-       FROM "AllocationEntry" ae
-       WHERE ae.phase_id = $1`,
-      [phaseId]
-    );
-    const budget = parseFloat(budgetRes.rows[0].budget);
-
-    // Latest snapshot for this phase
-    const snapshotRes = await q(
-      `SELECT hours_spent_to_date, cost_spent_to_date, working_days_used
-       FROM "OngoingSnapshot"
-       WHERE project_id = $1 AND phase_id = $2
-       ORDER BY reporting_date DESC, created_at DESC
-       LIMIT 1`,
-      [projectId, phaseId]
-    );
-
-    const snap = snapshotRes.rows[0] ?? null;
+    const budget = budgetMap.get(phaseId) ?? 0;
+    const snap   = snapshotMap.get(phaseId) ?? null;
     const cost_spent = snap ? parseFloat(snap.cost_spent_to_date) : 0;
     const hours_spent = snap ? parseFloat(snap.hours_spent_to_date) : 0;
     const working_days_used = snap ? (snap.working_days_used ?? 0) : 0;
@@ -134,7 +162,15 @@ export async function computeProjectFinancials(
   }
 
   const total_budget = phases.reduce((s, p) => s + p.budget, 0);
-  const total_cost_spent = phases.reduce((s, p) => s + p.cost_spent, 0);
+  let total_cost_spent = phases.reduce((s, p) => s + p.cost_spent, 0);
+  let total_hours_spent = phases.reduce((s, p) => s + p.hours_spent, 0);
+  let total_working_days_used = phases.reduce((s, p) => s + p.working_days_used, 0);
+  // When no per-phase actuals exist, surface the legacy project-level snapshot totals.
+  if (legacySnapshot !== null) {
+    if (total_cost_spent === 0) total_cost_spent = parseFloat(legacySnapshot.cost_spent_to_date) || 0;
+    if (total_hours_spent === 0) total_hours_spent = parseFloat(legacySnapshot.hours_spent_to_date) || 0;
+    if (total_working_days_used === 0) total_working_days_used = legacySnapshot.working_days_used || 0;
+  }
   const total_revised_forecast = phases.reduce((s, p) => s + p.revised_forecast, 0);
   const total_variance = total_revised_forecast - total_budget;
   const rollup_rag =
@@ -146,6 +182,8 @@ export async function computeProjectFinancials(
     phases,
     total_budget,
     total_cost_spent,
+    total_hours_spent,
+    total_working_days_used,
     total_revised_forecast,
     total_variance,
     rag_status: rollup_rag,

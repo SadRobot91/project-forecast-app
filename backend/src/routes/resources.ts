@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { query } from '../db';
+import { query, withTransaction } from '../db';
 import { getRegistryAggregate } from '../services/allocationAggregator';
 
 const router = Router();
@@ -61,31 +61,38 @@ router.put('/:id', async (req, res) => {
     return res.status(400).json({ error: 'day_rate must be a positive number' });
   }
   try {
-    await query('BEGIN');
+    const updated = await withTransaction(async (q) => {
+      const result = await q(
+        'UPDATE "Resource" SET name = $1, role = $2, day_rate = $3 WHERE id = $4 RETURNING *',
+        [name.trim(), role ?? '', rate, id]
+      );
+      if (result.rowCount === 0) {
+        throw Object.assign(new Error('Not found'), { status: 404 });
+      }
 
-    const result = await query(
-      'UPDATE "Resource" SET name = $1, role = $2, day_rate = $3 WHERE id = $4 RETURNING *',
-      [name.trim(), role ?? '', rate, id]
-    );
-    if (result.rowCount === 0) {
-      await query('ROLLBACK');
-      return res.status(404).json({ error: 'Not found' });
-    }
+      // Record the new rate in history so Knowledge Graph can look up the rate
+      // that was in effect at any given week_start.
+      await q(
+        `INSERT INTO "ResourceDayRateHistory" (resource_id, day_rate, effective_from)
+         VALUES ($1, $2, CURRENT_DATE)
+         ON CONFLICT (resource_id, effective_from) DO UPDATE SET day_rate = EXCLUDED.day_rate`,
+        [id, rate]
+      );
 
-    // Step G: cascade new day_rate to all existing AllocationEntry rows for
-    // this resource. weekly_cost = new_day_rate × fte × working_days.
-    // working_days is already stored per entry (materialised at INSERT).
-    await query(
-      `UPDATE "AllocationEntry"
-       SET weekly_cost = $1 * fte * working_days
-       WHERE resource_id = $2`,
-      [rate, id]
-    );
+      // Cascade new rate only to current/future entries — past entries preserve
+      // their original weekly_cost (point-in-time truth for historical analysis).
+      await q(
+        `UPDATE "AllocationEntry"
+         SET weekly_cost = $1 * fte * working_days
+         WHERE resource_id = $2 AND week_start >= DATE_TRUNC('week', CURRENT_DATE)`,
+        [rate, id]
+      );
 
-    await query('COMMIT');
-    res.json(result.rows[0]);
+      return result.rows[0];
+    });
+    res.json(updated);
   } catch (err: any) {
-    await query('ROLLBACK');
+    if (err.status === 404) return res.status(404).json({ error: 'Not found' });
     console.error(err);
     res.status(500).json({ error: err.message || 'Internal server error' });
   }

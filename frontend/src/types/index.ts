@@ -35,6 +35,8 @@ export interface ProjectSummary {
   budget_pct: number;
   days_remaining: number;
   currency: string;
+  description?: string | null;
+  tags?: string[];
 }
 
 // ─── Phase Template ───────────────────────────
@@ -281,4 +283,57 @@ export interface GanttData {
   project_start: string;
   project_end: string;
   phases: GanttPhaseData[];
+}
+
+// ─── Knowledge Graph ─────────────────────────
+
+export interface Decision {
+  id: number;
+  project_id: number;
+  phase_id: number | null;
+  author_id: number | null;
+  title: string;
+  rationale: string | null;
+  expected_consequence: string | null;
+  decided_at: string;
+  created_at: string;
+}
+
+export interface Risk {
+  id: number;
+  project_id: number;
+  decision_id: number | null;
+  decision_title: string | null;
+  category: 'Budget' | 'Timeline' | 'Resource' | 'Scope' | null;
+  description: string;
+  identified_at: string;
+  created_at: string;
+}
+
+export interface SlippageEvent {
+  id: number;
+  project_id: number;
+  phase_id: number | null;
+  expected: boolean;
+  cause: string | null;
+  recorded_at: string;
+  created_at: string;
+}
+
+export interface Retrospective {
+  id: number;
+  project_id: number;
+  phase_id: number | null;
+  question: string | null;
+  answer: string | null;
+  created_at: string;
+}
+
+export interface SimilarProject {
+  id: number;
+  name: string;
+  status: ProjectStatus;
+  tags: string[];
+  description: string | null;
+  matching_tag_count: number;
 }
