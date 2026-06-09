@@ -60,7 +60,7 @@ export default function Projects() {
       <main className="max-w-7xl mx-auto px-6 py-8">
         <div className="mb-6 flex items-end justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">
+            <h1 className="text-3xl font-bold tracking-tight">
               {user?.role === 'dm' ? 'Portfolio — Tutti i Progetti' : 'I Tuoi Progetti'}
             </h1>
             <p className="text-text-muted text-sm mt-1">
@@ -98,7 +98,7 @@ export default function Projects() {
                 <Link
                   key={p.id}
                   to={`/projects/${p.id}/dashboard`}
-                  className="group block bg-surface border border-border hover:border-accent/50 rounded-2xl p-6 shadow-card hover:shadow-glow-accent transition-all duration-300"
+                  className="group block bg-surface border border-border hover:border-accent/50 rounded-2xl p-6 shadow-card hover:shadow-glow-accent hover:-translate-y-1 transition-all duration-300"
                 >
                   <div className="flex items-start justify-between mb-4">
                     <div>

@@ -46,8 +46,8 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-base flex items-center justify-center px-4">
       {/* Decorative glow blobs */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-accent opacity-10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 pointer-events-none" />
-      <div className="absolute bottom-0 right-0 w-96 h-96 bg-accent-cyan opacity-10 rounded-full blur-3xl translate-x-1/2 translate-y-1/2 pointer-events-none" />
+      <div className="absolute top-0 left-0 w-96 h-96 bg-accent opacity-10 rounded-full blur-3xl spointer-events-none" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-accent-cyan opacity-10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="relative w-full max-w-md">
         {/* Logo / Header */}
@@ -57,14 +57,14 @@ export default function Login() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-text-primary tracking-tight">Project Forecast</h1>
+          <h1 className="text-3xl font-bold text-text-primary tracking-tight">Project Forecast</h1>
           <p className="text-text-muted text-sm mt-1">Accedi per continuare</p>
         </div>
 
         {/* Card */}
         <form
           onSubmit={handleSubmit}
-          className="bg-surface border border-border rounded-2xl p-8 shadow-card space-y-5"
+          className="bg-surface border border-white/8 rounded-2xl p-8 shadow-[0_8px_40px_rgba(108,99,255,0.12)] space-y-5"
         >
           {error && (
             <div className="bg-rag-red/10 border border-rag-red/30 text-rag-red text-sm rounded-lg px-4 py-3">
@@ -87,7 +87,7 @@ export default function Login() {
               }}
               onInvalid={(e) => e.preventDefault()}
               placeholder="giuseppe@company.com"
-              className="w-full bg-base border border-border text-text-primary placeholder-text-dim rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+              className={`w-full bg-base border ${fieldErrors.email ? 'border-rag-red focus:border-rag-red focus:ring-rag-red/30' : 'border-border focus:border-accent focus:ring-accent'} text-text-primary placeholder-text-dim rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-1 transition-colors`}
             />
             {fieldErrors.email && (
               <p className="text-rag-red text-sm mt-1">{fieldErrors.email}</p>
@@ -109,7 +109,7 @@ export default function Login() {
               }}
               onInvalid={(e) => e.preventDefault()}
               placeholder="••••••••"
-              className="w-full bg-base border border-border text-text-primary placeholder-text-dim rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors"
+              className={`w-full bg-base border ${fieldErrors.password ? 'border-rag-red focus:border-rag-red focus:ring-rag-red/30' : 'border-border focus:border-accent focus:ring-accent'} text-text-primary placeholder-text-dim rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-1 transition-colors`}
             />
             {fieldErrors.password && (
               <p className="text-rag-red text-sm mt-1">{fieldErrors.password}</p>
@@ -119,7 +119,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-accent hover:bg-accent/90 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-lg px-4 py-2.5 text-sm transition-all duration-200 shadow-glow-accent"
+            className="w-full bg-accent hover:bg-accent/90 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-lg px-4 py-2.5 text-sm transition-all duration-200 shadow-[0_4px_20px_rgba(108,99,255,0.4)] hover:shadow-[0_6px_28px_rgba(108,99,255,0.55)] hover:-translate-y-px"
           >
             {loading ? 'Accesso in corso…' : 'Accedi'}
           </button>

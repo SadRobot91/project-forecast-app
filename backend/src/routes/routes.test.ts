@@ -21,10 +21,11 @@ jest.mock('../services/computations', () => ({
 // ── Mock allocationAggregator: the routes delegate to it ──────────────────────
 const mockGetWeeklyTotal = jest.fn();
 const mockGetRegistryAggregate = jest.fn();
+const mockCanAllocate = jest.fn().mockResolvedValue({ ok: true, excess: 0, breakdown: {} });
 jest.mock('../services/allocationAggregator', () => ({
   getWeeklyTotal:        (...args: any[]) => mockGetWeeklyTotal(...args),
   getRegistryAggregate:  (...args: any[]) => mockGetRegistryAggregate(...args),
-  canAllocate:           jest.fn().mockResolvedValue({ ok: true, excess: 0, breakdown: {} }),
+  canAllocate:           (...args: any[]) => mockCanAllocate(...args),
 }));
 
 import express from 'express';
@@ -47,6 +48,8 @@ beforeEach(() => {
   mockQuery.mockReset();
   mockGetWeeklyTotal.mockReset();
   mockGetRegistryAggregate.mockReset();
+  mockCanAllocate.mockReset();
+  mockCanAllocate.mockResolvedValue({ ok: true, excess: 0, breakdown: {} });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -816,5 +819,338 @@ describe('GET /api/projects/:id/allocation/warnings', () => {
     expect(res.body.warnings[0]).toHaveProperty('week_start', '2026-06-01');
     expect(res.body.warnings[0].excess).toBeCloseTo(0.3, 5);
     expect(res.body.warnings[0]).not.toHaveProperty('month');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RESOURCES — GET list, POST create, PUT validation, DELETE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('GET /api/resources', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./resources');
+    app = makeApp(router, '/api/resources');
+  });
+
+  it('returns full resource list ordered by name', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([
+      { id: 1, name: 'Alice', role: 'PM', day_rate: '500' },
+      { id: 2, name: 'Bob',   role: 'Dev', day_rate: '600' },
+    ]));
+    const res = await request(app).get('/api/resources');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body[0].name).toBe('Alice');
+    const sql: string = mockQuery.mock.calls[0][0];
+    expect(sql).toContain('ORDER BY name ASC');
+  });
+});
+
+describe('POST /api/resources', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./resources');
+    app = makeApp(router, '/api/resources');
+  });
+
+  it('creates a resource and returns 201', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{ id: 3, name: 'Charlie', role: 'Dev', day_rate: '600' }]));
+    const res = await request(app).post('/api/resources').send({ name: 'Charlie', role: 'Dev', day_rate: 600 });
+    expect(res.status).toBe(201);
+    expect(res.body.name).toBe('Charlie');
+    const sql: string = mockQuery.mock.calls[0][0];
+    expect(sql).toContain('INSERT INTO "Resource"');
+  });
+
+  it('returns 400 when name is missing', async () => {
+    const res = await request(app).post('/api/resources').send({ role: 'Dev', day_rate: 600 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('name');
+  });
+
+  it('returns 400 when name is empty string', async () => {
+    const res = await request(app).post('/api/resources').send({ name: '   ', role: 'Dev', day_rate: 600 });
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when day_rate is not a number', async () => {
+    const res = await request(app).post('/api/resources').send({ name: 'Alice', day_rate: 'abc' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('day_rate');
+  });
+
+  it('returns 400 when day_rate is zero', async () => {
+    const res = await request(app).post('/api/resources').send({ name: 'Alice', day_rate: 0 });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('PUT /api/resources/:id — validation and 404', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./resources');
+    app = makeApp(router, '/api/resources');
+  });
+
+  it('returns 400 when name is missing', async () => {
+    const res = await request(app).put('/api/resources/1').send({ role: 'Dev', day_rate: 600 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('name');
+  });
+
+  it('returns 400 when day_rate is invalid', async () => {
+    const res = await request(app).put('/api/resources/1').send({ name: 'Alice', day_rate: -10 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('day_rate');
+  });
+
+  it('returns 404 when resource not found', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // BEGIN
+    mockQuery.mockResolvedValueOnce(dbOk([], 0));       // UPDATE Resource → rowCount 0
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // ROLLBACK
+    const res = await request(app).put('/api/resources/99').send({ name: 'Ghost', day_rate: 500 });
+    expect(res.status).toBe(404);
+  });
+});
+
+describe('DELETE /api/resources/:id', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./resources');
+    app = makeApp(router, '/api/resources');
+  });
+
+  it('deletes a resource that has no allocations', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([], 0));                        // SELECT allocCheck → empty
+    mockQuery.mockResolvedValueOnce(dbOk([{ id: 1 }], 1));              // DELETE RETURNING
+    const res = await request(app).delete('/api/resources/1');
+    expect(res.status).toBe(200);
+    expect(res.body.message).toContain('Deleted');
+  });
+
+  it('returns 400 when resource has existing allocations', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{ id: 5 }], 1));              // SELECT allocCheck → found
+    const res = await request(app).delete('/api/resources/1');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('allocated');
+  });
+
+  it('returns 404 when resource does not exist', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([], 0));                        // SELECT allocCheck → empty
+    mockQuery.mockResolvedValueOnce(dbOk([], 0));                        // DELETE → rowCount 0
+    const res = await request(app).delete('/api/resources/99');
+    expect(res.status).toBe(404);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BASELINE — PUT (save phases)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('PUT /api/projects/:id/baseline', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./baseline');
+    const outer = express();
+    outer.use(express.json());
+    outer.use('/api/projects/:id/baseline', router);
+    app = outer;
+  });
+
+  it('returns 400 when phases is empty array', async () => {
+    const res = await request(app).put('/api/projects/1/baseline').send({ phases: [] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('phases');
+  });
+
+  it('returns 400 when a phase has non-numeric phase_id', async () => {
+    const res = await request(app)
+      .put('/api/projects/1/baseline')
+      .send({ phases: [{ phase_id: 'abc', planned_start: '2026-01-01', planned_end: '2026-03-31' }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('phase_id');
+  });
+
+  it('returns 400 when contingency_pct is out of range', async () => {
+    const res = await request(app)
+      .put('/api/projects/1/baseline')
+      .send({ phases: [{ phase_id: 1, contingency_pct: 150 }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('contingency_pct');
+  });
+
+  it('returns 400 when baseline is already locked', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{ locked_at: '2026-01-01T00:00:00Z' }]));
+    const res = await request(app)
+      .put('/api/projects/1/baseline')
+      .send({ phases: [{ phase_id: 1, planned_start: '2026-01-05', planned_end: '2026-03-28' }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('locked');
+  });
+
+  it('saves phases without display_name and returns success', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // SELECT locked_at → no row (not locked)
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // SELECT holidays
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // BEGIN
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // UPDATE ProjectPhase (no display_name branch)
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // INSERT INTO Baseline ON CONFLICT
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // COMMIT
+
+    const res = await request(app)
+      .put('/api/projects/1/baseline')
+      .send({ phases: [{ phase_id: 1, planned_start: '2026-01-05', planned_end: '2026-03-28', contingency_pct: 10 }] });
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+
+    const updateCall = mockQuery.mock.calls.find((c: any[]) =>
+      typeof c[0] === 'string' && c[0].includes('UPDATE "ProjectPhase"')
+    );
+    expect(updateCall).toBeDefined();
+    expect(updateCall![0]).not.toContain('display_name');
+  });
+
+  it('saves phases with display_name using the display_name SQL branch', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // SELECT locked_at → no row
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // SELECT holidays
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // BEGIN
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // UPDATE ProjectPhase (with display_name)
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // INSERT INTO Baseline ON CONFLICT
+    mockQuery.mockResolvedValueOnce(dbOk([]));          // COMMIT
+
+    const res = await request(app)
+      .put('/api/projects/1/baseline')
+      .send({ phases: [{ phase_id: 1, planned_start: '2026-01-05', planned_end: '2026-03-28', display_name: 'Kick-off' }] });
+    expect(res.status).toBe(200);
+
+    const updateCall = mockQuery.mock.calls.find((c: any[]) =>
+      typeof c[0] === 'string' && c[0].includes('display_name')
+    );
+    expect(updateCall).toBeDefined();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GANTT — GET 404 project not found
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('GET /api/projects/:id/gantt — 404', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./gantt');
+    const outer = express();
+    outer.use(express.json());
+    outer.use('/api/projects/:id/gantt', router);
+    app = outer;
+  });
+
+  it('returns 404 when project does not exist', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([], 0));       // SELECT name FROM Project → not found
+    const res = await request(app).get('/api/projects/99/gantt');
+    expect(res.status).toBe(404);
+    expect(res.body.error).toContain('not found');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PHASES — type validation edge cases (planned_start / planned_end non-string)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('PATCH /api/projects/:id/phases/:phase_id — input type checks', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./phases');
+    const outer = express();
+    outer.use(express.json());
+    outer.use('/api/projects/:id/phases', router);
+    app = outer;
+  });
+
+  it('returns 400 when planned_start is a number (not a string)', async () => {
+    const res = await request(app)
+      .patch('/api/projects/1/phases/1')
+      .send({ planned_start: 20260101 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('planned_start');
+  });
+
+  it('returns 400 when planned_end is a number (not a string)', async () => {
+    const res = await request(app)
+      .patch('/api/projects/1/phases/1')
+      .send({ planned_end: 20260301 });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('planned_end');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ALLOCATION — PUT 409 FTE cap exceeded
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('PUT /api/projects/:id/allocation — FTE cap 409', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./allocations');
+    const outer = express();
+    outer.use(express.json());
+    outer.use('/api/projects/:id/allocation', router);
+    app = outer;
+  });
+
+  it('returns 409 with FTE breakdown when cap is exceeded', async () => {
+    mockCanAllocate.mockResolvedValueOnce({
+      ok: false,
+      excess: 0.5,
+      breakdown: [{ project_id: 2, project_name: 'Other Project', fte: 0.8 }],
+    });
+    mockQuery.mockResolvedValueOnce(dbOk([]));           // pg_advisory_xact_lock
+    mockQuery.mockResolvedValueOnce(dbOk([]));           // DELETE AllocationEntry
+
+    const res = await request(app)
+      .put('/api/projects/1/allocation')
+      .send({ phase_id: 10, allocations: [{ resource_id: 5, week_start: '2026-03-02', fte: 0.8 }] });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toContain('FTE cap');
+    expect(res.body.resource_id).toBe(5);
+    expect(res.body.excess).toBeCloseTo(0.5);
+    expect(res.body.breakdown).toHaveLength(1);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PROJECTS — GET with PM role filter
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('GET /api/projects — PM role filter', () => {
+  let pmApp: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./projects');
+    const app = express();
+    app.use(express.json());
+    app.use((req: any, _res: any, next: any) => {
+      req.auth = { role: 'pm', userId: 42, email: 'pm@test.com', supabaseUid: 'uid-42' };
+      next();
+    });
+    app.use('/api/projects', router);
+    pmApp = app;
+  });
+
+  it('adds WHERE pm_id = $1 clause and passes userId as parameter', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{
+      id: 3, name: 'PM Project', status: 'active', currency: 'GBP',
+      current_phase: 'build', current_phase_display_name: 'Build',
+      budget_total: '50000', budget_spent: '10000', budget_pct: 20,
+      days_remaining: 30, revised_forecast: 55000, rag_status: 'IN_LINEA',
+      variance: 5000,
+    }]));
+
+    const res = await request(pmApp).get('/api/projects');
+    expect(res.status).toBe(200);
+
+    const sql: string = mockQuery.mock.calls[0][0];
+    expect(sql).toContain('WHERE p.pm_id = $1');
+    const params: any[] = mockQuery.mock.calls[0][1];
+    expect(params[0]).toBe(42);
   });
 });

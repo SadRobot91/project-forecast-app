@@ -15,11 +15,11 @@ function fmtDate(iso: string) {
 
 // ─── Sub-components ───────────────────────────
 
-function KPICard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: boolean }) {
+function KPICard({ label, value, sub, accent, danger, positive }: { label: string; value: string; sub?: string; accent?: boolean; danger?: boolean; positive?: boolean }) {
   return (
-    <div className={`bg-surface border rounded-2xl px-5 py-4 shadow-card ${accent ? 'border-accent/40' : 'border-border'}`}>
+    <div className={`bg-surface border rounded-2xl px-5 py-4 shadow-card transition-colors ${accent ? 'border-accent/40 hover:border-accent/60' : danger ? 'border-rag-red/30 hover:border-rag-red/50' : 'border-border hover:border-white/10'}`}>
       <p className="text-text-muted text-xs font-medium uppercase tracking-wider mb-1">{label}</p>
-      <p className={`text-xl font-bold ${accent ? 'text-accent' : 'text-text-primary'}`}>{value}</p>
+      <p className={`text-xl font-bold tabular-nums ${accent ? 'text-accent' : danger ? 'text-rag-red' : positive ? 'text-rag-green' : 'text-text-primary'}`}>{value}</p>
       {sub && <p className="text-text-dim text-xs mt-0.5">{sub}</p>}
     </div>
   );
@@ -241,7 +241,7 @@ export default function Dashboard() {
         <AppNav projectId={id} projectName={data.project_name} />
         <main className="max-w-3xl mx-auto px-6 py-12 space-y-8">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">{data.project_name}</h1>
+            <h1 className="text-3xl font-bold tracking-tight">{data.project_name}</h1>
             <p className="text-text-muted text-sm mt-1">Il progetto non è ancora pianificato. Completa la configurazione per vedere la dashboard.</p>
           </div>
           <div className="grid sm:grid-cols-2 gap-4">
@@ -284,7 +284,7 @@ export default function Dashboard() {
         {/* RAG Banner */}
         <div className={`rounded-2xl border bg-gradient-to-r p-5 flex items-center justify-between ${ragBannerClass[kpis.rag_status]}`}>
           <div>
-            <h1 className="text-xl font-bold text-text-primary">{data.project_name}</h1>
+            <h1 className="text-2xl font-bold text-text-primary">{data.project_name}</h1>
             <p className="text-text-muted text-sm mt-0.5">Dashboard di progetto</p>
           </div>
           <RAGBadge status={kpis.rag_status} size="md" />
@@ -311,7 +311,7 @@ export default function Dashboard() {
           <KPICard label="Budget" value={formatCurrency(kpis.budget_total)} />
           <KPICard label="Previsione" value={formatCurrency(kpis.revised_forecast)} accent sub={`Scostamento: ${formatCurrency(kpis.variance)}`} />
           <KPICard label="Costo/gg" value={formatCurrency(kpis.daily_burn_rate)} sub="burn rate giornaliero" />
-          <KPICard label="Scostamento" value={formatCurrency(kpis.variance)} sub={kpis.variance > 0 ? 'sopra budget' : 'sotto budget'} />
+          <KPICard label="Scostamento" value={formatCurrency(kpis.variance)} sub={kpis.variance > 0 ? 'sopra budget' : 'sotto budget'} danger={kpis.variance > 0} positive={kpis.variance <= 0} />
           <KPICard label="Giorni rimasti" value={`${kpis.days_remaining}`} sub="giorni lavorativi" />
         </div>
 

@@ -9,22 +9,6 @@ function isoDate(d: Date | null): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function computeStatus(
-  startDate: Date | null,
-  endDate: Date | null,
-  actualDate: Date | null
-): 'not_started' | 'in_progress' | 'completed' {
-  if (actualDate) return 'completed';
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  if (!startDate || !endDate) return 'not_started';
-  const s = new Date(startDate); s.setHours(0, 0, 0, 0);
-  const e = new Date(endDate);   e.setHours(0, 0, 0, 0);
-  if (e < today) return 'completed';
-  if (s <= today && today <= e) return 'in_progress';
-  return 'not_started';
-}
-
 // GET /api/projects/:id/gantt
 router.get('/', async (req, res) => {
   const { id: projectId } = req.params as { id: string };

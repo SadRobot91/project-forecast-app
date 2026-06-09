@@ -58,7 +58,7 @@ export default function AppNav({ projectId, projectName }: Props) {
     }`;
 
   return (
-    <nav className="border-b border-border bg-surface/80 backdrop-blur-md sticky top-0 z-10 overflow-x-hidden" ref={drawerRef}>
+    <nav className="border-b border-border bg-surface/80 backdrop-blur-md sticky top-0 z-10 overflow-x-clip" ref={drawerRef}>
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
         {/* Left: logo + breadcrumb */}
         <div className="flex items-center gap-1 min-w-0">
