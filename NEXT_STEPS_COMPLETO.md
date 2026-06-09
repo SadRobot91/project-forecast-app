@@ -1,11 +1,8 @@
 # EDIP — Next Steps (completo): Bug architetturali + Delivery Knowledge Graph
 
-> Branch analizzato: `feature/leGenn`
-> Data analisi: 9 giugno 2026
-> Scopo: documento unico che (1) fotografa lo stato reale del codice verificato con build e test,
-> (2) elenca i problemi architetturali trovati leggendo l'implementazione, (3) definisce la
-> costruzione del Knowledge Graph — il moat — con risposta a "serve l'AI / come si implementa /
-> quanto costa", e (4) li sequenzia tutti in un'unica roadmap.
+> Branch: `feature/leGenn`
+> Data analisi: 9 giugno 2026 — Ultima revisione: 9 giugno 2026
+> Commit implementazione: `ac6cc9f`
 
 ---
 
@@ -19,18 +16,26 @@ Ho clonato il branch, installato le dipendenze ed eseguito build e test. Questi 
 | Forecast phase-aware | ✅ reale | `dashboard.ts` usa `computeProjectFinancials`; il burn flat sopravvive solo come KPI legacy di display, non guida più il forecast |
 | FTE cap enforcement | ✅ solido | Transazione + `pg_advisory_xact_lock` + DELETE-first + check + 409 |
 | Auth + ownership | ✅ reale | Supabase, `requireAuth`, filtro `WHERE p.pm_id = $1` per ruolo `pm` |
-| Test | ✅ 94/94 verde | Cresciuti da 71 — più copertura del previsto |
-| TypeScript | ✅ 0 errori | `tsc --noEmit` pulito sul codice di produzione |
+| Bug 2.1 — doppio sistema actuals | ✅ risolto | `dashboard.ts` usa rollup; `phase_id` obbligatorio su POST `/ongoing`; fallback legacy per snapshot pre-migrazione |
+| Bug 2.2 — `day_rate` riscrive storia | ✅ risolto | Migrazione 011 + `ResourceDayRateHistory`; cascade limitato a `DATE_TRUNC('week', CURRENT_DATE)` |
+| Bug 2.3 — N+1 in phaseFinancialEngine | ✅ risolto | 3 query batch (`ANY` + `DISTINCT ON`) invece di `1 + 2N` |
+| Knowledge Graph (schema + CRUD + UI) | ✅ implementato | Migrazioni 012–013; route `/api/projects/:id/*`; form Scoping/Slippage/Retro |
+| KG retrieval strutturato | ✅ implementato | `GET /api/projects/similar` con `?|` JSONB tag-match |
+| KG pgvector + embedding service | ✅ implementato | Migrazione 013 + `embeddingService.ts` (guard: skip se no API key o desc ≤ 20ch) |
+| KG IntelligenceProvider | ✅ implementato | `NoOpProvider` + `ClaudeProvider` (cold-start guard < 3, error fallback) |
+| Quality fixes post code-review | ✅ applicati | `withTransaction` atomica; `budget_spent` SUM per fase; `total_hours/working_days_used` nel rollup; `NaN` guard su `phase_id`; auto-select fase in Avanzamento |
+| Test | ✅ 116/116 verde | +22 test rispetto all'analisi iniziale (94 → 116) |
+| TypeScript | ✅ 0 errori | `tsc --noEmit` pulito su BE e FE |
 
-**Verdetto:** lo strato di integrità finanziaria è chiuso e robusto. Non ci sono più scuse tecniche per rimandare il moat: l'engine non perde più acqua, è il momento di costruirci sopra.
+**Verdetto:** lo strato di integrità finanziaria è chiuso e robusto, i tre bug architetturali sono stati corretti, il Knowledge Graph è stato implementato dalla cattura alla sintesi AI. Commit `ac6cc9f` su `feature/leGenn`.
 
 ---
 
 ## 2. Bug e problemi architetturali trovati nel codice
 
-Questi **non sono nei documenti esistenti** (`ARCHITECTURE_AS_IS.md`, `NEXT_STEPS.md`). Li ho trovati leggendo l'implementazione dopo i fix.
+> **Tutti e tre i bug sono stati corretti nel commit `ac6cc9f`.** Le sezioni sotto sono mantenute come documentazione dell'analisi e del fix applicato.
 
-### 2.1 — Doppio sistema di "actuals" non riconciliato (severità: ALTA)
+### 2.1 — Doppio sistema di "actuals" non riconciliato — ✅ RISOLTO
 
 Dopo lo Step E, `OngoingSnapshot.phase_id` è nullable: `NULL` = snapshot di progetto (legacy), valore = snapshot di fase. Il problema è che oggi **convivono due letture parallele**:
 
@@ -39,9 +44,9 @@ Dopo lo Step E, `OngoingSnapshot.phase_id` è nullable: `NULL` = snapshot di pro
 
 **Rottura concreta:** se un PM inserisce uno snapshot a livello di progetto (`phase_id NULL`), l'engine vede zero actuals per ogni fase → forecast = budget per tutte le fasi in corso, mentre il KPI di progetto mostra un costo speso. I due numeri si contraddicono nella stessa schermata.
 
-**Fix:** una sola fonte di verità. La più pulita è **forzare l'inserimento a livello di fase** e derivare il totale di progetto da `rollup.total_cost_spent`. In transizione, se esiste solo uno snapshot NULL, ripartirlo pro-quota sulle fasi in corso (pezza), ma meglio l'enforcement. Sforzo: 1–2 gg.
+**Fix applicato:** `phase_id` obbligatorio su `POST /ongoing` (400 se null). `dashboard.ts` usa `rollup.total_cost_spent` e i nuovi campi `rollup.total_hours_spent` / `rollup.total_working_days_used`. `phaseFinancialEngine.ts` aggiunge fallback legacy per snapshot pre-migrazione (`phase_id IS NULL`). `projects.ts GET /` usa `DISTINCT ON (phase_id) + SUM` per `budget_spent`/`hours_spent`. `Avanzamento.tsx` auto-seleziona la prima fase al caricamento.
 
-### 2.2 — `day_rate` riscrive la storia (severità: MEDIA, ALTA per il moat)
+### 2.2 — `day_rate` riscrive la storia — ✅ RISOLTO
 
 Lo Step G fa il cascade tattico: cambi il `day_rate` di una risorsa e un `UPDATE` riscrive `weekly_cost` su **tutte** le `AllocationEntry` esistenti, comprese quelle passate. Funziona per la consistenza immediata, ma **distrugge la verità point-in-time**: se Vivek costava €400/gg a marzo e €450/gg da giugno, dopo il cambio tutto marzo risulta a €450.
 
@@ -56,9 +61,10 @@ CREATE TABLE "ResourceDayRateHistory" (
 );
 -- weekly_cost si calcola sul rate vigente alla week_start, non sul rate corrente
 ```
-Sforzo: 2–3 gg.
 
-### 2.3 — Tutto ricalcolato live, nessuna materialized view (severità: BASSA ora, ALTA a portfolio)
+**Fix applicato:** migrazione `011_resource_day_rate_history.sql` crea `ResourceDayRateHistory` con PK `(resource_id, effective_from)`. `PUT /resources/:id` (ora in `withTransaction`) inserisce il nuovo rate in history e aggiorna `AllocationEntry` solo per `week_start >= DATE_TRUNC('week', CURRENT_DATE)` — le entry passate sono immutabili.
+
+### 2.3 — N+1 in phaseFinancialEngine — ✅ RISOLTO (parziale: batch query, no materialized view)
 
 `computeProjectFinancials` fa un pattern **N+1**: un loop sulle fasi con, dentro, una query budget e una query snapshot per ogni fase. Per 1 progetto × 5 fasi = ~11 query, irrilevante. Ma la Capability 9 (Portfolio Dashboard) moltiplica per N progetti: N × M fasi × 2 query, ricalcolate a ogni GET. Non scala.
 
