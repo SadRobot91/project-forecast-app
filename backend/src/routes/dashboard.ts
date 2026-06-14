@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
   const { id: projectId } = req.params as { id: string };
 
   try {
-    const projRes = await query('SELECT name FROM "Project" WHERE id = $1', [projectId]);
+    const projRes = await query('SELECT name, tags FROM "Project" WHERE id = $1', [projectId]);
     if (!projRes.rowCount) return res.status(404).json({ error: 'Project not found' });
 
     // Phases with budget from allocations
@@ -101,6 +101,7 @@ router.get('/', async (req, res) => {
     res.json({
       project_id:   parseInt(projectId, 10),
       project_name: projRes.rows[0].name,
+      tags:         projRes.rows[0].tags ?? [],
       kpis: {
         cost_spent:        costSpent,
         budget_total:      totalBudget,
@@ -128,7 +129,7 @@ router.get('/', async (req, res) => {
     });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

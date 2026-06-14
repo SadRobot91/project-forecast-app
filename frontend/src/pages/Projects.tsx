@@ -8,6 +8,7 @@ import RAGBadge from '../components/RAGBadge';
 import BudgetBar from '../components/BudgetBar';
 import AppNav from '../components/AppNav';
 import RetrospectiveModal from '../components/RetrospectiveModal';
+import Modal from '../components/Modal';
 import { formatCurrency } from '../utils/formatCurrency';
 
 const STATUS_CYCLE: ProjectStatus[] = ['active', 'on_hold', 'closed'];
@@ -19,7 +20,7 @@ const STATUS_LABEL: Record<ProjectStatus, string> = {
 };
 const STATUS_CLS: Record<ProjectStatus, string> = {
   active:   'border-rag-green/40 text-rag-green   bg-rag-green/10',
-  on_hold:  'border-yellow-400/40 text-yellow-400  bg-yellow-400/10',
+  on_hold:  'border-rag-yellow/40 text-rag-yellow  bg-rag-yellow/10',
   closed:   'border-text-dim/30  text-text-dim    bg-base',
   archived: 'border-text-dim/20  text-text-dim    bg-base',
 };
@@ -205,7 +206,9 @@ export default function Projects() {
 
             {filtered.length === 0 && (
               <p className="text-text-muted text-center py-16 text-sm">
-                Nessun progetto con stato "{filter === 'on_hold' ? 'In pausa' : filter}".
+                {filter === 'all'
+                  ? 'Nessun progetto disponibile.'
+                  : `Nessun progetto con stato "${STATUS_LABEL[filter as ProjectStatus]}".`}
               </p>
             )}
           </>
@@ -214,12 +217,8 @@ export default function Projects() {
 
       {/* Scoping modal */}
       {scopingProjectId !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setScopingProjectId(null)} />
-          <div className="relative bg-surface border border-border rounded-2xl shadow-card p-6 w-full max-w-md mx-4 animate-in fade-in zoom-in-95 duration-200">
-            <h2 className="text-lg font-bold text-text-primary mb-4">Modifica info progetto</h2>
-
-            <div className="space-y-4">
+        <Modal title="Modifica info progetto" onClose={() => setScopingProjectId(null)} closeDisabled={scopingSaving}>
+            <div className="space-y-4 mt-4">
               <div>
                 <label className="block text-sm text-text-muted mb-1">Descrizione progetto</label>
                 <textarea
@@ -282,8 +281,7 @@ export default function Projects() {
                 {scopingSaving ? 'Salvataggio…' : 'Salva'}
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
 
       {retroProjectId !== null && (

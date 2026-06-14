@@ -16,6 +16,7 @@ export default {
         'rag-green': '#22c55e',
         'rag-yellow': '#eab308',
         'rag-red': '#ef4444',
+        milestone: '#fb923c',
         'text-primary': '#e2e8f0',
         'text-muted': '#94a3b8',
         'text-dim': '#8896aa',
@@ -26,8 +27,23 @@ export default {
       },
       boxShadow: {
         'glow-accent': '0 0 24px rgba(108, 99, 255, 0.2)',
+        'glow-accent-strong': '0 4px 20px rgba(108, 99, 255, 0.4)',
         'glow-cyan': '0 0 24px rgba(0, 212, 255, 0.15)',
         card: '0 4px 24px rgba(0, 0, 0, 0.4)',
+      },
+      keyframes: {
+        'fade-in': {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        'modal-in': {
+          '0%': { opacity: '0', transform: 'scale(0.95)' },
+          '100%': { opacity: '1', transform: 'scale(1)' },
+        },
+      },
+      animation: {
+        'fade-in': 'fade-in 0.2s ease-out',
+        'modal-in': 'modal-in 0.2s ease-out',
       },
     },
   },

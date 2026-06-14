@@ -20,12 +20,30 @@ jest.mock('../services/computations', () => ({
 
 // ── Mock allocationAggregator: the routes delegate to it ──────────────────────
 const mockGetWeeklyTotal = jest.fn();
+const mockGetWeeklyTotalsBatch = jest.fn();
 const mockGetRegistryAggregate = jest.fn();
 const mockCanAllocate = jest.fn().mockResolvedValue({ ok: true, excess: 0, breakdown: {} });
 jest.mock('../services/allocationAggregator', () => ({
   getWeeklyTotal:        (...args: any[]) => mockGetWeeklyTotal(...args),
+  getWeeklyTotalsBatch:  (...args: any[]) => mockGetWeeklyTotalsBatch(...args),
   getRegistryAggregate:  (...args: any[]) => mockGetRegistryAggregate(...args),
   canAllocate:           (...args: any[]) => mockCanAllocate(...args),
+}));
+
+// ── Mock the intelligence provider (no real Claude / env key in tests) ────────
+const mockSummarize = jest.fn();
+const mockGenerateRetro = jest.fn();
+jest.mock('../services/intelligence/intelligenceService', () => ({
+  getIntelligenceProvider: () => ({
+    summarizeScopingRisks:  (...args: any[]) => mockSummarize(...args),
+    generateRetroQuestions: (...args: any[]) => mockGenerateRetro(...args),
+  }),
+}));
+
+// ── Mock the phase financial engine (retro-questions reads its rollup) ────────
+const mockComputeFinancials = jest.fn();
+jest.mock('../services/phaseFinancialEngine', () => ({
+  computeProjectFinancials: (...args: any[]) => mockComputeFinancials(...args),
 }));
 
 import express from 'express';
@@ -47,9 +65,17 @@ function dbOk(rows: any[], rowCount = rows.length) {
 beforeEach(() => {
   mockQuery.mockReset();
   mockGetWeeklyTotal.mockReset();
+  mockGetWeeklyTotalsBatch.mockReset();
+  mockGetWeeklyTotalsBatch.mockResolvedValue(new Map());
   mockGetRegistryAggregate.mockReset();
   mockCanAllocate.mockReset();
   mockCanAllocate.mockResolvedValue({ ok: true, excess: 0, breakdown: {} });
+  mockSummarize.mockReset();
+  mockSummarize.mockResolvedValue('');
+  mockGenerateRetro.mockReset();
+  mockGenerateRetro.mockResolvedValue([]);
+  mockComputeFinancials.mockReset();
+  mockComputeFinancials.mockResolvedValue({ phases: [], total_variance: 0 });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -169,12 +195,12 @@ describe('PUT /api/projects/:id/allocation', () => {
 
   it('saves with week_start (not month) in INSERT', async () => {
     // withTransaction calls fn(mockQuery) directly — no BEGIN/COMMIT through mockQuery
+    mockQuery.mockResolvedValueOnce(dbOk([{ planned_start: new Date('2026-03-02'), planned_end: new Date('2026-06-19') }])); // phase ownership check + dates (letta una volta, fix N+1)
     mockQuery.mockResolvedValueOnce(dbOk([])); // pg_advisory_xact_lock
     mockQuery.mockResolvedValueOnce(dbOk([])); // DELETE
-    // canAllocate is mocked separately — no mockQuery call
-    mockQuery.mockResolvedValueOnce(dbOk([{ day_rate: '600' }])); // SELECT day_rate (resource first)
-    mockQuery.mockResolvedValueOnce(dbOk([{ planned_start: new Date('2026-03-02'), planned_end: new Date('2026-06-19') }])); // calculatePhaseWeekWorkingDays
-    mockQuery.mockResolvedValueOnce(dbOk([{ id: 1, resource_id: 2, project_id: 1, phase_id: 1, week_start: '2026-03-02', fte: 0.8, working_days: 5, weekly_cost: 2400 }])); // INSERT RETURNING
+    // getWeeklyTotalsBatch / canAllocate are mocked separately — no mockQuery call
+    mockQuery.mockResolvedValueOnce(dbOk([{ id: 2, day_rate: '600' }])); // SELECT day_rate batch (ANY)
+    mockQuery.mockResolvedValueOnce(dbOk([{ id: 1, resource_id: 2, project_id: 1, phase_id: 1, week_start: '2026-03-02', fte: 0.8, working_days: 5, weekly_cost: 2400 }])); // INSERT multi-row RETURNING
 
     const res = await request(app)
       .put('/api/projects/1/allocation')
@@ -193,12 +219,12 @@ describe('PUT /api/projects/:id/allocation', () => {
   // Step B: AllocationEntry is the working copy and stays mutable after
   // baseline lock. The BAC is preserved as a snapshot on the Baseline row.
   it('allows updates even when baseline is locked (working copy)', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{ planned_start: new Date('2026-03-02'), planned_end: new Date('2026-06-19') }])); // phase ownership check + dates
     mockQuery.mockResolvedValueOnce(dbOk([])); // pg_advisory_xact_lock
     mockQuery.mockResolvedValueOnce(dbOk([])); // DELETE
-    // canAllocate mocked separately
-    mockQuery.mockResolvedValueOnce(dbOk([{ day_rate: '600' }])); // SELECT day_rate
-    mockQuery.mockResolvedValueOnce(dbOk([{ planned_start: new Date('2026-03-02'), planned_end: new Date('2026-06-19') }])); // calculatePhaseWeekWorkingDays
-    mockQuery.mockResolvedValueOnce(dbOk([{ id: 1, resource_id: 2, project_id: 1, phase_id: 1, week_start: '2026-03-09', fte: 0.5, working_days: 5, weekly_cost: 1500 }])); // INSERT
+    // getWeeklyTotalsBatch / canAllocate mocked separately
+    mockQuery.mockResolvedValueOnce(dbOk([{ id: 2, day_rate: '600' }])); // SELECT day_rate batch
+    mockQuery.mockResolvedValueOnce(dbOk([{ id: 1, resource_id: 2, project_id: 1, phase_id: 1, week_start: '2026-03-09', fte: 0.5, working_days: 5, weekly_cost: 1500 }])); // INSERT multi-row
 
     const res = await request(app)
       .put('/api/projects/1/allocation')
@@ -210,6 +236,101 @@ describe('PUT /api/projects/:id/allocation', () => {
       typeof c[0] === 'string' && c[0].includes('SELECT locked_at FROM "Baseline"')
     );
     expect(lockCheck).toBeUndefined();
+  });
+
+  // ── Step 5 security fixes: input validation + phase ownership ──────────────
+  it('returns 400 when allocations is not an array', async () => {
+    const res = await request(app)
+      .put('/api/projects/1/allocation')
+      .send({ phase_id: 1, allocations: 'not-an-array' });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('allocations');
+  });
+
+  it('returns 400 when phase_id is missing', async () => {
+    const res = await request(app)
+      .put('/api/projects/1/allocation')
+      .send({ allocations: [] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('phase_id');
+  });
+
+  it('returns 400 when fte is out of range', async () => {
+    const res = await request(app)
+      .put('/api/projects/1/allocation')
+      .send({ phase_id: 1, allocations: [{ resource_id: 2, week_start: '2026-03-02', fte: 1.5 }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('fte');
+  });
+
+  it('returns 400 when week_start is not a valid date', async () => {
+    const res = await request(app)
+      .put('/api/projects/1/allocation')
+      .send({ phase_id: 1, allocations: [{ resource_id: 2, week_start: 'not-a-date', fte: 0.5 }] });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('week_start');
+  });
+
+  it('returns 404 when the phase does not belong to the project', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([], 0)); // phase ownership check → no match
+    const res = await request(app)
+      .put('/api/projects/1/allocation')
+      .send({ phase_id: 999, allocations: [{ resource_id: 2, week_start: '2026-03-02', fte: 0.5 }] });
+    expect(res.status).toBe(404);
+    // Nothing must be written when ownership fails
+    const deleteCall = mockQuery.mock.calls.find((c: any[]) =>
+      typeof c[0] === 'string' && c[0].includes('DELETE FROM "AllocationEntry"')
+    );
+    expect(deleteCall).toBeUndefined();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SECURITY — requireProjectAccess (object-level authorization)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('requireProjectAccess middleware', () => {
+  let appFor: (auth: { userId: number; role: string }) => express.Express;
+
+  beforeAll(async () => {
+    const { requireProjectAccess } = await import('../middleware/requireProjectAccess');
+    appFor = (auth) => {
+      const app = express();
+      app.use((req, _res, next) => { (req as any).auth = auth; next(); });
+      app.use('/api/projects/:id', requireProjectAccess);
+      app.get('/api/projects/:id/probe', (_req, res) => res.json({ ok: true }));
+      return app;
+    };
+  });
+
+  it('allows the owning PM', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{ pm_id: 42 }]));
+    const res = await request(appFor({ userId: 42, role: 'pm' })).get('/api/projects/1/probe');
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 404 (not 403) for a PM that does not own the project', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{ pm_id: 7 }]));
+    const res = await request(appFor({ userId: 42, role: 'pm' })).get('/api/projects/1/probe');
+    expect(res.status).toBe(404);
+  });
+
+  it('allows DM on any project', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{ pm_id: 7 }]));
+    const res = await request(appFor({ userId: 1, role: 'dm' })).get('/api/projects/1/probe');
+    expect(res.status).toBe(200);
+  });
+
+  it('returns 404 when the project does not exist', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([], 0));
+    const res = await request(appFor({ userId: 42, role: 'pm' })).get('/api/projects/999/probe');
+    expect(res.status).toBe(404);
+  });
+
+  it('passes through non-numeric ids (e.g. /api/projects/similar)', async () => {
+    const res = await request(appFor({ userId: 42, role: 'pm' })).get('/api/projects/similar/probe');
+    expect(res.status).toBe(200);
+    expect(mockQuery).not.toHaveBeenCalled();
   });
 });
 
@@ -750,9 +871,7 @@ describe('POST /api/projects/:id/baseline/lock', () => {
         working_days: 80, planned_hours: 640, status: 'in_progress',
         budget: '42500', contingency_pct: '10' },
     ]));
-    mockQuery.mockResolvedValueOnce(dbOk([])); // BEGIN
-    mockQuery.mockResolvedValueOnce(dbOk([])); // INSERT/UPDATE Baseline with snapshot
-    mockQuery.mockResolvedValueOnce(dbOk([])); // COMMIT
+    mockQuery.mockResolvedValueOnce(dbOk([])); // INSERT/UPDATE Baseline with snapshot (statement singolo, no BEGIN/COMMIT)
     mockQuery.mockResolvedValueOnce(dbOk([{
       locked_at: now,
       total_budget_at_lock: '42500',
@@ -1001,12 +1120,11 @@ describe('PUT /api/projects/:id/baseline', () => {
   });
 
   it('saves phases without display_name and returns success', async () => {
+    // withTransaction è mockato: BEGIN/COMMIT non passano da mockQuery
     mockQuery.mockResolvedValueOnce(dbOk([]));          // SELECT locked_at → no row (not locked)
     mockQuery.mockResolvedValueOnce(dbOk([]));          // SELECT holidays
-    mockQuery.mockResolvedValueOnce(dbOk([]));          // BEGIN
-    mockQuery.mockResolvedValueOnce(dbOk([]));          // UPDATE ProjectPhase (no display_name branch)
+    mockQuery.mockResolvedValueOnce(dbOk([], 1));       // UPDATE ProjectPhase (no display_name branch) — 1 row matched
     mockQuery.mockResolvedValueOnce(dbOk([]));          // INSERT INTO Baseline ON CONFLICT
-    mockQuery.mockResolvedValueOnce(dbOk([]));          // COMMIT
 
     const res = await request(app)
       .put('/api/projects/1/baseline')
@@ -1022,12 +1140,11 @@ describe('PUT /api/projects/:id/baseline', () => {
   });
 
   it('saves phases with display_name using the display_name SQL branch', async () => {
+    // withTransaction è mockato: BEGIN/COMMIT non passano da mockQuery
     mockQuery.mockResolvedValueOnce(dbOk([]));          // SELECT locked_at → no row
     mockQuery.mockResolvedValueOnce(dbOk([]));          // SELECT holidays
-    mockQuery.mockResolvedValueOnce(dbOk([]));          // BEGIN
-    mockQuery.mockResolvedValueOnce(dbOk([]));          // UPDATE ProjectPhase (with display_name)
+    mockQuery.mockResolvedValueOnce(dbOk([], 1));       // UPDATE ProjectPhase (with display_name) — 1 row matched
     mockQuery.mockResolvedValueOnce(dbOk([]));          // INSERT INTO Baseline ON CONFLICT
-    mockQuery.mockResolvedValueOnce(dbOk([]));          // COMMIT
 
     const res = await request(app)
       .put('/api/projects/1/baseline')
@@ -1109,11 +1226,14 @@ describe('PUT /api/projects/:id/allocation — FTE cap 409', () => {
   });
 
   it('returns 409 with FTE breakdown when cap is exceeded', async () => {
+    // Il batch dei totali esistenti porta la coppia oltre il cap (0.7 + 0.8 = 1.5)
+    mockGetWeeklyTotalsBatch.mockResolvedValueOnce(new Map([['5:2026-03-02', 0.7]]));
     mockCanAllocate.mockResolvedValueOnce({
       ok: false,
       excess: 0.5,
       breakdown: [{ project_id: 2, project_name: 'Other Project', fte: 0.8 }],
     });
+    mockQuery.mockResolvedValueOnce(dbOk([{ planned_start: new Date('2026-03-02'), planned_end: new Date('2026-06-19') }])); // phase ownership check + dates
     mockQuery.mockResolvedValueOnce(dbOk([]));           // pg_advisory_xact_lock
     mockQuery.mockResolvedValueOnce(dbOk([]));           // DELETE AllocationEntry
 
@@ -1329,5 +1449,233 @@ describe('GET /api/projects/similar', () => {
     expect(res.body[0].matching_tag_count).toBeGreaterThanOrEqual(res.body[1].matching_tag_count);
     const sql: string = mockQuery.mock.calls[0][0];
     expect(sql).toContain('?|');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GET /api/projects/:id/similar-semantic
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('GET /api/projects/:id/similar-semantic', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./intelligence');
+    app = makeApp(router, '/api/projects/:id');
+  });
+
+  it('returns projects ordered by cosine distance when embedding present', async () => {
+    mockQuery
+      .mockResolvedValueOnce(dbOk([{ description_embedding: '[0.1,0.2,0.3]' }]))
+      .mockResolvedValueOnce(dbOk([
+        { id: 3, name: 'Beta',  status: 'active', tags: ['x'], description: null, similarity: 0.91 },
+        { id: 4, name: 'Gamma', status: 'closed', tags: [],    description: null, similarity: 0.72 },
+      ]));
+    const res = await request(app).get('/api/projects/1/similar-semantic');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(2);
+    expect(res.body[0].similarity).toBe(0.91);
+    expect(res.body[0].similarity).toBeGreaterThanOrEqual(res.body[1].similarity);
+    const sql: string = mockQuery.mock.calls[1][0];
+    expect(sql).toContain('<=>');
+  });
+
+  it('returns empty array when the project has no embedding (no kNN query)', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([{ description_embedding: null }]));
+    const res = await request(app).get('/api/projects/1/similar-semantic');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+  });
+
+  it('degrades to empty array when pgvector is absent (undefined column/operator)', async () => {
+    mockQuery.mockRejectedValueOnce(Object.assign(new Error('column does not exist'), { code: '42703' }));
+    const res = await request(app).get('/api/projects/1/similar-semantic');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('returns generic 500 without err.message on unexpected DB error', async () => {
+    mockQuery.mockRejectedValueOnce(Object.assign(new Error('connection boom'), { code: '08006' }));
+    const res = await request(app).get('/api/projects/1/similar-semantic');
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Internal server error' });
+    expect(JSON.stringify(res.body)).not.toContain('boom');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GET /api/projects/:id/scoping-insight
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('GET /api/projects/:id/scoping-insight', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./intelligence');
+    app = makeApp(router, '/api/projects/:id');
+  });
+
+  const projectRow = { id: 1, name: 'RXI', description: 'desc', tags: ['react', 'api'] };
+
+  it('passes composed similarHistory to the provider and returns its brief', async () => {
+    mockSummarize.mockResolvedValueOnce('Rischio: integrazione API sottostimata.');
+    mockQuery
+      .mockResolvedValueOnce(dbOk([projectRow]))                       // project
+      .mockResolvedValueOnce(dbOk([{ description_embedding: '[0.1]' }])) // target embedding
+      .mockResolvedValueOnce(dbOk([                                     // semantic neighbours
+        { id: 2, name: 'A', description: null, tags: ['react'] },
+        { id: 3, name: 'B', description: null, tags: ['api'] },
+        { id: 4, name: 'C', description: null, tags: ['react'] },
+      ]));
+    const res = await request(app).get('/api/projects/1/scoping-insight');
+    expect(res.status).toBe(200);
+    expect(res.body.brief).toContain('integrazione API');
+    expect(res.body.similar_count).toBe(3);
+    const historyArg = mockSummarize.mock.calls[0][1];
+    expect(historyArg).toHaveLength(3);
+  });
+
+  it('returns empty brief gracefully when provider is NoOp (no ANTHROPIC_API_KEY)', async () => {
+    // mockSummarize default resolves '' (NoOp behaviour)
+    mockQuery
+      .mockResolvedValueOnce(dbOk([projectRow]))
+      .mockResolvedValueOnce(dbOk([{ description_embedding: null }]))   // no embedding
+      .mockResolvedValueOnce(dbOk([{ id: 2, name: 'A', description: null, tags: ['react'] }])); // tag fallback
+    const res = await request(app).get('/api/projects/1/scoping-insight');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ brief: '', similar_count: 1 });
+  });
+
+  it('falls back to tag-overlap (no 500) when pgvector is absent', async () => {
+    mockQuery
+      .mockResolvedValueOnce(dbOk([projectRow]))
+      .mockRejectedValueOnce(Object.assign(new Error('type vector does not exist'), { code: '42704' }))
+      .mockResolvedValueOnce(dbOk([{ id: 2, name: 'A', description: null, tags: ['react'] }]));
+    const res = await request(app).get('/api/projects/1/scoping-insight');
+    expect(res.status).toBe(200);
+    expect(res.body.similar_count).toBe(1);
+  });
+
+  it('returns 404 when the project does not exist', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([], 0));
+    const res = await request(app).get('/api/projects/99/scoping-insight');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns generic 500 without err.message on unexpected DB error', async () => {
+    mockQuery.mockRejectedValueOnce(Object.assign(new Error('pool boom'), { code: '08006' }));
+    const res = await request(app).get('/api/projects/1/scoping-insight');
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Internal server error' });
+    expect(JSON.stringify(res.body)).not.toContain('boom');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GET /api/projects/:id/retro-questions
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('GET /api/projects/:id/retro-questions', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./intelligence');
+    app = makeApp(router, '/api/projects/:id');
+  });
+
+  const projectRow = { id: 1, name: 'RXI', description: 'desc', tags: ['react'] };
+
+  it('builds RetroContext from slippage + financials and returns provider questions', async () => {
+    mockGenerateRetro.mockResolvedValueOnce(['Q1?', 'Q2?', 'Q3?']);
+    mockComputeFinancials.mockResolvedValueOnce({
+      phases: [{ variance: 1000 }, { variance: -200 }, { variance: 50 }],
+      total_variance: 850,
+    });
+    mockQuery
+      .mockResolvedValueOnce(dbOk([projectRow]))                       // project
+      .mockResolvedValueOnce(dbOk([{ total: 3, unexpected: 1 }]));     // slippage counts
+    const res = await request(app).get('/api/projects/1/retro-questions');
+    expect(res.status).toBe(200);
+    expect(res.body.questions).toEqual(['Q1?', 'Q2?', 'Q3?']);
+    const observed = mockGenerateRetro.mock.calls[0][1];
+    expect(observed.slippage_count).toBe(3);
+    expect(observed.unexpected_slippage_count).toBe(1);
+    expect(observed.budget_variance).toBe(850);
+    expect(observed.phases_delayed).toBe(2); // variance > 0 phases
+  });
+
+  it('returns empty array gracefully when provider is NoOp / no signal', async () => {
+    // mockGenerateRetro default resolves []
+    mockQuery
+      .mockResolvedValueOnce(dbOk([projectRow]))
+      .mockResolvedValueOnce(dbOk([{ total: 0, unexpected: 0 }]));
+    const res = await request(app).get('/api/projects/1/retro-questions');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ questions: [] });
+  });
+
+  it('returns 404 when the project does not exist', async () => {
+    mockQuery.mockResolvedValueOnce(dbOk([], 0));
+    const res = await request(app).get('/api/projects/99/retro-questions');
+    expect(res.status).toBe(404);
+  });
+
+  it('returns generic 500 without err.message on unexpected DB error', async () => {
+    mockQuery.mockRejectedValueOnce(Object.assign(new Error('slip boom'), { code: '08006' }));
+    const res = await request(app).get('/api/projects/1/retro-questions');
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Internal server error' });
+    expect(JSON.stringify(res.body)).not.toContain('boom');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GET /api/resources/capacity-heatmap
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('GET /api/resources/capacity-heatmap', () => {
+  let app: express.Express;
+  beforeAll(async () => {
+    const { default: router } = await import('./resources');
+    app = makeApp(router, '/api/resources');
+  });
+
+  // Far-future weeks so the "from current week forward" filter always selects them.
+  const aggregate = {
+    weeks: ['2099-01-05', '2099-01-12', '2099-01-19'],
+    has_overallocation: true,
+    rows: [
+      {
+        resource: { id: 1, name: 'Aisha', role: 'Tech Lead', day_rate: 600 },
+        allocations: [],
+        totals: { '2099-01-05': 1.2, '2099-01-12': 0.4, '2099-01-19': 0.7 },
+      },
+    ],
+  };
+
+  it('returns a dense matrix with capacity bands per cell', async () => {
+    mockGetRegistryAggregate.mockResolvedValueOnce(aggregate);
+    const res = await request(app).get('/api/resources/capacity-heatmap');
+    expect(res.status).toBe(200);
+    expect(res.body.weeks).toEqual(aggregate.weeks);
+    const row = res.body.resources[0];
+    expect(row.resource_id).toBe(1);
+    expect(row.cells[0]).toEqual({ week_start: '2099-01-05', total_fte: 1.2, band: 'over' });
+    expect(row.cells[1].band).toBe('under');   // 0.4 < 0.5
+    expect(row.cells[2].band).toBe('optimal'); // 0.7 in [0.5, 1.0]
+  });
+
+  it('honours the weeks horizon query param', async () => {
+    mockGetRegistryAggregate.mockResolvedValueOnce(aggregate);
+    const res = await request(app).get('/api/resources/capacity-heatmap?weeks=1');
+    expect(res.status).toBe(200);
+    expect(res.body.weeks).toHaveLength(1);
+    expect(res.body.resources[0].cells).toHaveLength(1);
+  });
+
+  it('returns generic 500 without err.message on aggregate failure', async () => {
+    mockGetRegistryAggregate.mockRejectedValueOnce(Object.assign(new Error('agg boom'), { code: '08006' }));
+    const res = await request(app).get('/api/resources/capacity-heatmap');
+    expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'Internal server error' });
+    expect(JSON.stringify(res.body)).not.toContain('boom');
   });
 });

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { query } from '../db';
-import { calculateRevisedForecast, calculateRAGStatus } from '../services/computations';
+import { calculateRevisedForecast, calculateRAGStatus, calculateNetworkDays } from '../services/computations';
 
 const router = Router();
 
@@ -61,15 +61,28 @@ router.get('/', async (req, res) => {
                 WHERE pp4.project_id = p.id
               ), 0)::integer as planned_hours_total
        FROM "Project" p
-       LEFT JOIN "ProjectPhase" ph ON ph.project_id = p.id AND ph.status = 'in_progress'
+       LEFT JOIN LATERAL (
+         SELECT phase_type, display_name
+         FROM "ProjectPhase"
+         WHERE project_id = p.id AND status = 'in_progress'
+         ORDER BY "order"
+         LIMIT 1
+       ) ph ON true
        ${pmFilter}
-       GROUP BY p.id, p.name, p.status, p.currency, p.description, p.tags, ph.phase_type, ph.display_name
        ORDER BY p.id`,
       params
     );
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    const needsHolidays = result.rows.some(
+      (r: any) => r.working_days_remaining_snapshot == null && r.project_end
+    );
+    const holidays: Date[] = needsHolidays
+      ? (await query(`SELECT date FROM "PublicHoliday" WHERE country_code = 'IT'`)).rows
+          .map((h: any) => new Date(h.date))
+      : [];
 
     const projects = result.rows.map((r: any) => {
       const total       = parseFloat(r.budget_total) || 0;
@@ -84,12 +97,7 @@ router.get('/', async (req, res) => {
         const end = new Date(r.project_end);
         end.setHours(0, 0, 0, 0);
         if (end >= today) {
-          let d = new Date(today);
-          while (d <= end) {
-            const dow = d.getDay();
-            if (dow !== 0 && dow !== 6) daysRemaining++;
-            d.setDate(d.getDate() + 1);
-          }
+          daysRemaining = calculateNetworkDays(today, end, holidays);
         }
       }
 
@@ -121,7 +129,7 @@ router.get('/', async (req, res) => {
     res.json(projects);
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -159,7 +167,7 @@ router.get('/similar', async (req, res) => {
     })));
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -182,7 +190,7 @@ router.patch('/:id/status', async (req, res) => {
     res.json(result.rows[0]);
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

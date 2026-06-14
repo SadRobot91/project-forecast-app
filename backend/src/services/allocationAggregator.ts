@@ -83,6 +83,38 @@ export async function getWeeklyTotal(
   return parseFloat(res.rows[0].total);
 }
 
+export async function getWeeklyTotalsBatch(
+  pairs: { resource_id: number; week_start: string }[],
+  opts: { excludeProjectId?: number; query?: QueryFn } = {}
+): Promise<Map<string, number>> {
+  const q = opts.query ?? defaultQuery;
+  const totals = new Map<string, number>();
+  if (pairs.length === 0) return totals;
+
+  const resourceIds = pairs.map((p) => p.resource_id);
+  const weekStarts = pairs.map((p) => p.week_start);
+  const params: any[] = [resourceIds, weekStarts];
+  let sql = `
+    SELECT ae.resource_id,
+           to_char(ae.week_start, 'YYYY-MM-DD') AS week_start,
+           COALESCE(SUM(ae.fte), 0)::numeric AS total
+    FROM "AllocationEntry" ae
+    JOIN UNNEST($1::int[], $2::date[]) AS p(resource_id, week_start)
+      ON ae.resource_id = p.resource_id AND ae.week_start = p.week_start
+  `;
+  if (opts.excludeProjectId !== undefined) {
+    params.push(opts.excludeProjectId);
+    sql += ` WHERE ae.project_id != $3`;
+  }
+  sql += ` GROUP BY ae.resource_id, ae.week_start`;
+
+  const res = await q(sql, params);
+  for (const row of res.rows) {
+    totals.set(`${row.resource_id}:${row.week_start}`, parseFloat(row.total));
+  }
+  return totals;
+}
+
 /**
  * Decide whether `requested_fte` may be committed on (resource, week).
  * Returns an AllocationDecision; the caller is responsible for choosing

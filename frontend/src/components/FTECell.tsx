@@ -1,3 +1,5 @@
+import { fteMeta } from '../utils/fteSemaphore';
+
 interface Props {
   value: number;
   crossProjectTotal: number; // sum across all projects for this resource+month
@@ -5,15 +7,8 @@ interface Props {
   disabled?: boolean;
 }
 
-function getSemaphore(total: number): { icon: string; ring: string; bg: string } {
-  if (total === 0)   return { icon: '⚪', ring: 'ring-border',       bg: ''               };
-  if (total > 1.0)   return { icon: '🔴', ring: 'ring-rag-red/60',   bg: 'bg-rag-red/10'  };
-  if (total < 0.8)   return { icon: '🟡', ring: 'ring-rag-yellow/40', bg: 'bg-rag-yellow/5'};
-  return                    { icon: '✅', ring: 'ring-rag-green/40',  bg: 'bg-rag-green/5' };
-}
-
 export default function FTECell({ value, crossProjectTotal, onChange, disabled = false }: Props) {
-  const { icon, ring, bg } = getSemaphore(crossProjectTotal);
+  const { icon, ariaLabel, ring, bg } = fteMeta(crossProjectTotal);
   const isOverallocated = crossProjectTotal > 1.0;
 
   return (
@@ -37,7 +32,12 @@ export default function FTECell({ value, crossProjectTotal, onChange, disabled =
           }`}
         />
       </div>
-      <span className="text-xs" title={`Cross-project total: ${(crossProjectTotal * 100).toFixed(0)}%`}>
+      <span
+        className="text-xs"
+        role="img"
+        aria-label={`${ariaLabel} — ${(crossProjectTotal * 100).toFixed(0)}% cross-project`}
+        title={`Cross-project total: ${(crossProjectTotal * 100).toFixed(0)}%`}
+      >
         {icon}
       </span>
     </div>

@@ -19,7 +19,8 @@ export interface AuthResponse {
 export type RAGStatus = 'IN_LINEA' | 'A_RISCHIO' | 'FUORI_BUDGET';
 
 // PhaseType kept as internal DB key — UI always uses display_name
-export type PhaseType = 'feasibility' | 'planning_design' | 'build' | 'deployment' | 'closure' | string;
+export type KnownPhaseType = 'feasibility' | 'planning_design' | 'build' | 'deployment' | 'closure';
+export type PhaseType = KnownPhaseType | (string & {});
 export type ProjectStatus = 'active' | 'on_hold' | 'closed' | 'archived';
 export type PhaseStatus = 'not_started' | 'in_progress' | 'completed';
 
@@ -109,6 +110,7 @@ export interface PhaseFinancial {
 export interface DashboardData {
   project_id: number;
   project_name: string;
+  tags?: string[];
   kpis: DashboardKPIs;
   phase_budgets: PhaseBudgetRow[];
   phase_financials?: PhaseFinancial[];
@@ -207,6 +209,28 @@ export interface ResourceRegistryFilters {
   project_id?: number;
   date_from?: string;
   date_to?: string;
+}
+
+// ─── Capacity Heatmap ─────────────────────────
+
+export type CapacityBand = 'under' | 'optimal' | 'over';
+
+export interface CapacityCell {
+  week_start: string;
+  total_fte: number;
+  band: CapacityBand;
+}
+
+export interface CapacityResourceRow {
+  resource_id: number;
+  name: string;
+  role: string;
+  cells: CapacityCell[];
+}
+
+export interface CapacityHeatmapData {
+  weeks: string[];
+  resources: CapacityResourceRow[];
 }
 
 // ─── Ongoing ─────────────────────────────────
@@ -335,5 +359,16 @@ export interface SimilarProject {
   status: ProjectStatus;
   tags: string[];
   description: string | null;
-  matching_tag_count: number;
+  matching_tag_count?: number;
+  similarity?: number | null;
+}
+
+export interface ScopingInsight {
+  brief: string;
+  similar_count: number;
+}
+
+export interface RetroQuestions {
+  /** AI-generated retro questions; empty array when NoOp provider or no signal. */
+  questions: string[];
 }

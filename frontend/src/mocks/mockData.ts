@@ -2,6 +2,8 @@ import type {
   AuthResponse, DashboardData, ProjectSummary,
   BaselineData, AllocationData, ResourceRegistryData, GanttData,
   OngoingData, OngoingSnapshot,
+  Decision, Risk, SlippageEvent, Retrospective, SimilarProject, ScopingInsight, RetroQuestions,
+  CapacityHeatmapData,
 } from '../types';
 
 // ─────────────────────────────────────────────
@@ -380,6 +382,195 @@ export const MOCK_ONGOING_HISTORY: OngoingSnapshot[] = [
     source: 'manual', created_at: '2026-02-28T09:00:00Z',
   },
 ];
+
+// ─── Knowledge Graph ─────────────────────────
+
+export const MOCK_DECISIONS: Decision[] = [
+  {
+    id: 1,
+    project_id: 1,
+    phase_id: 2,
+    author_id: 1,
+    title: 'Adozione React per il frontend',
+    rationale: 'Team già familiare con React; componenti riusabili riducono i tempi di build.',
+    expected_consequence: 'Curva di apprendimento minima; integrazioni esistenti mantenibili.',
+    decided_at: '2026-01-22T10:00:00Z',
+    created_at: '2026-01-22T10:00:00Z',
+  },
+  {
+    id: 2,
+    project_id: 1,
+    phase_id: 3,
+    author_id: 1,
+    title: 'Posticipo integrazione Keyedin a Sprint 3',
+    rationale: 'API Keyedin non stabilizzate; preferibile integrare dopo la fase core.',
+    expected_consequence: 'Slittamento di 2 settimane sull\'integrazione esterna.',
+    decided_at: '2026-03-15T14:00:00Z',
+    created_at: '2026-03-15T14:00:00Z',
+  },
+];
+
+export const MOCK_RISKS: Risk[] = [
+  {
+    id: 1,
+    project_id: 1,
+    decision_id: 2,
+    decision_title: 'Posticipo integrazione Keyedin a Sprint 3',
+    category: 'Timeline',
+    description: 'Rischio di ulteriore slittamento se l\'API Keyedin subisce breaking changes.',
+    identified_at: '2026-03-15T14:30:00Z',
+    created_at: '2026-03-15T14:30:00Z',
+  },
+  {
+    id: 2,
+    project_id: 1,
+    decision_id: null,
+    decision_title: null,
+    category: 'Budget',
+    description: 'Potenziale overrun se lo Sprint 4 (UAT prep) richiede rework estensivo.',
+    identified_at: '2026-04-10T09:00:00Z',
+    created_at: '2026-04-10T09:00:00Z',
+  },
+];
+
+export const MOCK_SLIPPAGE: SlippageEvent[] = [
+  {
+    id: 1,
+    project_id: 1,
+    phase_id: 1,
+    expected: true,
+    cause: 'Stakeholder non disponibili per la sign-off nella data pianificata.',
+    recorded_at: '2026-01-22T16:00:00Z',
+    created_at: '2026-01-22T16:00:00Z',
+  },
+  {
+    id: 2,
+    project_id: 1,
+    phase_id: 2,
+    expected: false,
+    cause: 'Revisione requisiti imprevista richiesta dal cliente.',
+    recorded_at: '2026-03-01T10:00:00Z',
+    created_at: '2026-03-01T10:00:00Z',
+  },
+];
+
+export const MOCK_RETROSPECTIVES: Retrospective[] = [
+  {
+    id: 1,
+    project_id: 1,
+    phase_id: 1,
+    question: 'Cosa ha funzionato bene nella fase di Feasibility?',
+    answer: 'Interviste rapide agli stakeholder e report sintetico condiviso tempestivamente.',
+    created_at: '2026-01-23T09:00:00Z',
+  },
+  {
+    id: 2,
+    project_id: 1,
+    phase_id: 2,
+    question: 'Cosa miglioreresti nella fase di Planning & Design?',
+    answer: 'Coinvolgere il cliente più presto nel processo di validazione dei requisiti.',
+    created_at: '2026-03-02T09:00:00Z',
+  },
+];
+
+// ─── Similar Projects (tag-based) ────────────
+
+export const MOCK_SIMILAR_PROJECTS: SimilarProject[] = [
+  {
+    id: 2,
+    name: 'PChallenges Portal',
+    status: 'active',
+    tags: ['portal', 'react', 'ux'],
+    description: 'Portale di gestione sfide aziendali con dashboard interattiva.',
+    matching_tag_count: 2,
+  },
+  {
+    id: 3,
+    name: 'DataMesh Migration',
+    status: 'closed',
+    tags: ['data', 'migration', 'react', 'api'],
+    description: 'Migrazione infrastruttura dati verso architettura DataMesh.',
+    matching_tag_count: 1,
+  },
+  {
+    id: 4,
+    name: 'InternalHR Revamp',
+    status: 'active',
+    tags: ['hr', 'react', 'platform'],
+    description: 'Rinnovamento del sistema HR interno con nuova UI React.',
+    matching_tag_count: 1,
+  },
+];
+
+// ─── Similar Projects (semantic / AI) ────────
+
+export const MOCK_SIMILAR_SEMANTIC: SimilarProject[] = [
+  {
+    id: 3,
+    name: 'DataMesh Migration',
+    status: 'closed',
+    tags: ['data', 'migration', 'react', 'api'],
+    description: 'Migrazione infrastruttura dati verso architettura DataMesh.',
+    similarity: 0.91,
+  },
+  {
+    id: 5,
+    name: 'SupplyChain Optimizer',
+    status: 'active',
+    tags: ['supply-chain', 'optimization', 'api'],
+    description: 'Ottimizzazione della catena di fornitura tramite analisi predittiva.',
+    similarity: 0.84,
+  },
+];
+
+// ─── Scoping Insight (AI risk brief) ─────────
+
+export const MOCK_SCOPING_INSIGHT: ScopingInsight = {
+  brief:
+    'Sulla base di 3 progetti simili, attenzione a: (1) sottostima della fase di ' +
+    'integrazione API — storicamente +15% di effort rispetto al piano; (2) dipendenza ' +
+    'da fornitori esterni per la migrazione dati, causa ricorrente di slittamenti; ' +
+    '(3) scope creep sulla UX in fase di build. Definisci early una baseline di ' +
+    'contingency e milestone di verifica intermedie.',
+  similar_count: 3,
+};
+
+// ─── Retro Questions (AI) ────────────────────
+
+export const MOCK_RETRO_QUESTIONS: RetroQuestions = {
+  questions: [
+    'Gli slittamenti inattesi nella fase di integrazione erano prevedibili con un check anticipato sui fornitori?',
+    'Lo scostamento di budget è concentrato in una fase: cosa lo ha guidato e come anticiparlo?',
+    'Quali assunzioni di stima iniziali si sono rivelate errate e come aggiornarle per il prossimo progetto?',
+  ],
+};
+
+// ─── Capacity Heatmap (demand vs supply) ─────
+
+const MOCK_CAPACITY_WEEKS = ['2026-06-01', '2026-06-08', '2026-06-15', '2026-06-22', '2026-06-29', '2026-07-06'];
+
+const band = (t: number): 'under' | 'optimal' | 'over' =>
+  t > 1.0 ? 'over' : t >= 0.5 ? 'optimal' : 'under';
+
+const capacityRow = (resource_id: number, name: string, role: string, ftes: number[]) => ({
+  resource_id,
+  name,
+  role,
+  cells: MOCK_CAPACITY_WEEKS.map((w, i) => ({
+    week_start: w,
+    total_fte: ftes[i] ?? 0,
+    band: band(ftes[i] ?? 0),
+  })),
+});
+
+export const MOCK_CAPACITY_HEATMAP: CapacityHeatmapData = {
+  weeks: MOCK_CAPACITY_WEEKS,
+  resources: [
+    capacityRow(1, 'Aisha Khan',  'Tech Lead',  [1.0, 1.2, 0.8, 0.5, 0.3, 0.0]),
+    capacityRow(2, 'Vishal Rao',  'Developer',  [0.6, 1.0, 1.3, 1.0, 0.7, 0.4]),
+    capacityRow(3, 'Marco Bianchi','Designer',  [0.4, 0.5, 0.6, 0.2, 0.0, 0.0]),
+  ],
+};
 
 export const MOCK_ONGOING: OngoingData = {
   project_name: 'RXI Platform',

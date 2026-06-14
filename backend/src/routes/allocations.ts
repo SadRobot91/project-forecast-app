@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { query, withTransaction } from '../db';
 import type { QueryFn } from '../db';
 import { calculateNetworkDays } from '../services/computations';
-import { canAllocate, getWeeklyTotal } from '../services/allocationAggregator';
+import { canAllocate, getWeeklyTotal, getWeeklyTotalsBatch } from '../services/allocationAggregator';
 
 interface FteCapError extends Error {
   code: 'FTE_CAP';
@@ -38,14 +38,10 @@ function isFteCapError(err: unknown): err is FteCapError {
 const router = Router({ mergeParams: true });
 
 /** Compute working days within a phase that fall in the given ISO week (Mon–Sun). */
-async function calculatePhaseWeekWorkingDays(
-  phaseId: string,
-  weekStart: string,
-  q: QueryFn = query
-): Promise<number> {
-  const phaseRes = await q('SELECT planned_start, planned_end FROM "ProjectPhase" WHERE id = $1', [phaseId]);
-  if (!phaseRes.rowCount) throw new Error('Phase not found');
-  const phase = phaseRes.rows[0];
+function phaseWeekWorkingDays(
+  phase: { planned_start: Date | string | null; planned_end: Date | string | null },
+  weekStart: string
+): number {
   if (!phase.planned_start || !phase.planned_end) return 0;
 
   const weekStartDate = new Date(weekStart);
@@ -154,16 +150,52 @@ router.get('/', async (req, res) => {
     });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // PUT /api/projects/:id/allocation
 router.put('/', async (req, res) => {
   const projectId = (req.params as { id: string }).id;
-  const { phase_id, allocations } = req.body;
+  const { phase_id, allocations } = (req.body ?? {}) as { phase_id?: unknown; allocations?: unknown };
+
+  // ── Validazione input ──────────────────────────────────────────────────
+  if (!Number.isInteger(phase_id)) {
+    return res.status(400).json({ error: 'phase_id is required and must be an integer' });
+  }
+  if (!Array.isArray(allocations)) {
+    return res.status(400).json({ error: 'allocations is required and must be an array' });
+  }
+  for (const alloc of allocations) {
+    if (typeof alloc !== 'object' || alloc === null) {
+      return res.status(400).json({ error: 'each allocation must be an object' });
+    }
+    const { resource_id, week_start, fte } = alloc as Record<string, unknown>;
+    if (!Number.isInteger(resource_id)) {
+      return res.status(400).json({ error: 'each allocation must have an integer resource_id' });
+    }
+    if (typeof week_start !== 'string' || !ISO_DATE_RE.test(week_start) || isNaN(new Date(week_start).getTime())) {
+      return res.status(400).json({ error: 'each allocation must have a valid week_start (YYYY-MM-DD)' });
+    }
+    if (typeof fte !== 'number' || isNaN(fte) || fte < 0 || fte > 1) {
+      return res.status(400).json({ error: 'each allocation must have a numeric fte between 0 and 1' });
+    }
+  }
 
   try {
+    // Ownership: la fase deve appartenere al progetto :id, altrimenti si
+    // scriverebbero AllocationEntry cross-progetto (corruzione dei budget).
+    const phaseCheck = await query(
+      'SELECT planned_start, planned_end FROM "ProjectPhase" WHERE id = $1 AND project_id = $2',
+      [phase_id, projectId]
+    );
+    if (!phaseCheck.rowCount) {
+      return res.status(404).json({ error: 'Phase not found' });
+    }
+    const phase = phaseCheck.rows[0];
+
     // Step B: after lock, AllocationEntry is the working copy and remains
     // mutable. The locked baseline is preserved as a snapshot on the
     // Baseline row (total_budget_at_lock + phase_snapshot_at_lock), so
@@ -198,43 +230,60 @@ router.put('/', async (req, res) => {
         fteMap.set(key, (fteMap.get(key) ?? 0) + alloc.fte);
       }
 
-      // 4. Check FTE cap for each (resource, week) pair.
+      // 4. Check FTE cap: una sola query batch per tutte le coppie
+      //    (resource, week); canAllocate resta usato solo nel ramo di
+      //    errore per costruire il breakdown diagnostico.
+      const existingTotals = await getWeeklyTotalsBatch(
+        lockPairs.map((p) => ({ resource_id: p.resource_id, week_start: p.week_start })),
+        { query: q }
+      );
       for (const [key, totalFte] of fteMap) {
         const [rid, ws] = key.split(':');
         const resource_id = Number(rid);
-        const decision = await canAllocate(resource_id, ws, totalFte, { query: q });
-        if (!decision.ok) {
+        const wouldBe = (existingTotals.get(key) ?? 0) + totalFte;
+        if (wouldBe > 1.0) {
+          const decision = await canAllocate(resource_id, ws, totalFte, { query: q });
           throw makeFteCapError(
             resource_id,
             ws,
-            decision.excess!,
-            decision.breakdown!
+            decision.excess ?? parseFloat((wouldBe - 1.0).toFixed(4)),
+            decision.breakdown ?? []
           );
         }
       }
 
-      // 5. Insert the new allocation entries.
-      const rows = [];
-      for (const alloc of allocations) {
-        const { resource_id, week_start, fte } = alloc;
-
-        const resResult = await q('SELECT day_rate FROM "Resource" WHERE id = $1', [resource_id]);
-        if (!resResult.rowCount) throw new Error(`Resource ${resource_id} not found`);
-        const dayRate = parseFloat(resResult.rows[0].day_rate);
-
-        const workingDays = await calculatePhaseWeekWorkingDays(phase_id, week_start, q);
-        const weeklyCost = dayRate * fte * workingDays;
-
-        const result = await q(
-          `INSERT INTO "AllocationEntry"
-           (resource_id, project_id, phase_id, week_start, fte, working_days, weekly_cost)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-          [resource_id, projectId, phase_id, week_start, fte, workingDays, weeklyCost]
-        );
-        rows.push(result.rows[0]);
+      // 5. Day rate di tutte le risorse coinvolte in una query.
+      const resourceIds = Array.from(new Set(allocations.map((a: any) => a.resource_id)));
+      const ratesRes = await q(
+        'SELECT id, day_rate FROM "Resource" WHERE id = ANY($1::int[])',
+        [resourceIds]
+      );
+      const rateMap = new Map<number, number>(
+        ratesRes.rows.map((r: any) => [r.id as number, parseFloat(r.day_rate)])
+      );
+      for (const rid of resourceIds) {
+        if (!rateMap.has(rid)) throw new Error(`Resource ${rid} not found`);
       }
 
-      return rows;
+      // 6. INSERT multi-riga in una query (prima: un INSERT per cella).
+      if (allocations.length === 0) return [];
+      const values: any[] = [];
+      const tuples: string[] = [];
+      let i = 1;
+      for (const alloc of allocations) {
+        const { resource_id, week_start, fte } = alloc;
+        const workingDays = phaseWeekWorkingDays(phase, week_start);
+        const weeklyCost = rateMap.get(resource_id)! * fte * workingDays;
+        tuples.push(`($${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++}, $${i++})`);
+        values.push(resource_id, projectId, phase_id, week_start, fte, workingDays, weeklyCost);
+      }
+      const result = await q(
+        `INSERT INTO "AllocationEntry"
+         (resource_id, project_id, phase_id, week_start, fte, working_days, weekly_cost)
+         VALUES ${tuples.join(', ')} RETURNING *`,
+        values
+      );
+      return result.rows;
     });
 
     res.json(inserted);
@@ -249,8 +298,7 @@ router.put('/', async (req, res) => {
         breakdown: err.breakdown,
       });
     }
-    const message = err instanceof Error ? err.message : 'Internal server error';
-    res.status(500).json({ error: message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

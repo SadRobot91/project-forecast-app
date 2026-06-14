@@ -47,7 +47,8 @@ router.patch('/', async (req, res) => {
     }
     res.json(result.rows[0]);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -95,7 +96,8 @@ router.post('/decisions', async (req, res) => {
     })();
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -111,7 +113,8 @@ router.get('/decisions', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -149,7 +152,8 @@ router.post('/risks', async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -169,7 +173,8 @@ router.get('/risks', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -201,7 +206,8 @@ router.post('/slippage', async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -217,7 +223,8 @@ router.get('/slippage', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -249,7 +256,8 @@ router.post('/retrospectives', async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -265,7 +273,8 @@ router.get('/retrospectives', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err: any) {
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

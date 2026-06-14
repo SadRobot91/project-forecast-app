@@ -1,25 +1,31 @@
 import { apiClient } from './client';
-import type { AllocationData, Resource, ResourceRegistryData } from '../types';
-import { MOCK_ALLOCATION, MOCK_RESOURCE_REGISTRY, MOCK_PROJECTS } from '../mocks/mockData';
+import { withMock } from './mock';
+import type { AllocationData, Resource, ResourceRegistryData, CapacityHeatmapData } from '../types';
+import { MOCK_ALLOCATION, MOCK_RESOURCE_REGISTRY, MOCK_PROJECTS, MOCK_CAPACITY_HEATMAP } from '../mocks/mockData';
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
-
-export async function fetchAllocation(projectId: string): Promise<AllocationData> {
-  if (USE_MOCK) {
-    await new Promise((r) => setTimeout(r, 400));
-    const id = parseInt(projectId, 10);
-    const project = MOCK_PROJECTS.find((p) => p.id === id);
-    return { ...MOCK_ALLOCATION, project_id: id, project_name: project?.name ?? MOCK_ALLOCATION.project_name };
-  }
-  return apiClient<AllocationData>(`/api/projects/${projectId}/allocation`);
+export function fetchCapacityHeatmap(weeks = 12): Promise<CapacityHeatmapData> {
+  return withMock(
+    () => MOCK_CAPACITY_HEATMAP,
+    () => apiClient<CapacityHeatmapData>(`/api/resources/capacity-heatmap?weeks=${weeks}`),
+  );
 }
 
-export async function fetchResources(): Promise<Resource[]> {
-  if (USE_MOCK) {
-    await new Promise((r) => setTimeout(r, 200));
-    return MOCK_ALLOCATION.all_resources;
-  }
-  return apiClient<Resource[]>('/api/resources');
+export function fetchAllocation(projectId: string): Promise<AllocationData> {
+  return withMock(
+    () => {
+      const id = parseInt(projectId, 10);
+      const project = MOCK_PROJECTS.find((p) => p.id === id);
+      return { ...MOCK_ALLOCATION, project_id: id, project_name: project?.name ?? MOCK_ALLOCATION.project_name };
+    },
+    () => apiClient<AllocationData>(`/api/projects/${projectId}/allocation`),
+  );
+}
+
+export function fetchResources(): Promise<Resource[]> {
+  return withMock(
+    () => MOCK_ALLOCATION.all_resources,
+    () => apiClient<Resource[]>('/api/resources'),
+  );
 }
 
 export async function saveAllocationPhase(
@@ -27,54 +33,52 @@ export async function saveAllocationPhase(
   phaseId: number,
   allocations: { resource_id: number; week_start: string; fte: number }[]
 ): Promise<void> {
-  if (USE_MOCK) {
-    await new Promise((r) => setTimeout(r, 500));
-    return;
-  }
-  await apiClient(`/api/projects/${projectId}/allocation`, {
-    method: 'PUT',
-    body: JSON.stringify({ phase_id: phaseId, allocations }),
-  });
+  await withMock(
+    () => undefined,
+    () => apiClient(`/api/projects/${projectId}/allocation`, {
+      method: 'PUT',
+      body: JSON.stringify({ phase_id: phaseId, allocations }),
+    }),
+  );
 }
 
-export async function fetchFTEWarnings(
+export function fetchFTEWarnings(
   projectId: string,
   resourceId: number,
   weekStart: string
 ): Promise<{ isValid: boolean; warnings: { projectId: number; week_start: string; excess: number }[] }> {
-  if (USE_MOCK) {
-    // Simulate overallocation for Vishal in week 2026-06-01
-    if (resourceId === 2 && weekStart === '2026-06-01') {
-      return { isValid: false, warnings: [{ projectId: 1, week_start: '2026-06-01', excess: 0.3 }] };
-    }
-    return { isValid: true, warnings: [] };
-  }
-  return apiClient(`/api/projects/${projectId}/allocation/warnings?resource_id=${resourceId}&week_start=${weekStart}`);
+  return withMock(
+    () => {
+      // Simulate overallocation for Vishal in week 2026-06-01
+      if (resourceId === 2 && weekStart === '2026-06-01') {
+        return { isValid: false, warnings: [{ projectId: 1, week_start: '2026-06-01', excess: 0.3 }] };
+      }
+      return { isValid: true, warnings: [] };
+    },
+    () => apiClient(`/api/projects/${projectId}/allocation/warnings?resource_id=${resourceId}&week_start=${weekStart}`),
+  );
 }
 
-export async function createResource(data: Omit<Resource, 'id'>): Promise<Resource> {
-  if (USE_MOCK) {
-    await new Promise((r) => setTimeout(r, 300));
-    return { ...data, id: Math.floor(Math.random() * 1000) + 10 };
-  }
-  return apiClient<Resource>('/api/resources', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+export function createResource(data: Omit<Resource, 'id'>): Promise<Resource> {
+  return withMock(
+    () => ({ ...data, id: Math.floor(Math.random() * 1000) + 10 }),
+    () => apiClient<Resource>('/api/resources', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  );
 }
 
 export async function deleteResource(id: number): Promise<void> {
-  if (USE_MOCK) {
-    await new Promise((r) => setTimeout(r, 300));
-    return;
-  }
-  await apiClient(`/api/resources/${id}`, { method: 'DELETE' });
+  await withMock(
+    () => undefined,
+    () => apiClient(`/api/resources/${id}`, { method: 'DELETE' }),
+  );
 }
 
-export async function fetchResourceRegistry(): Promise<ResourceRegistryData> {
-  if (USE_MOCK) {
-    await new Promise((r) => setTimeout(r, 400));
-    return MOCK_RESOURCE_REGISTRY;
-  }
-  return apiClient<ResourceRegistryData>('/api/resources/registry');
+export function fetchResourceRegistry(): Promise<ResourceRegistryData> {
+  return withMock(
+    () => MOCK_RESOURCE_REGISTRY,
+    () => apiClient<ResourceRegistryData>('/api/resources/registry'),
+  );
 }
