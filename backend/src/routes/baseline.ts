@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { query } from '../db';
+import { query, withTransaction } from '../db';
 import { calculateNetworkDays } from '../services/computations';
 
 const router = Router({ mergeParams: true });
@@ -124,7 +124,7 @@ router.get('/', async (req, res) => {
     });
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -169,47 +169,55 @@ router.put('/', async (req, res) => {
     const holidaysRes = await query(`SELECT date FROM "PublicHoliday" WHERE country_code = 'IT'`);
     const holidays = holidaysRes.rows.map((h: any) => new Date(h.date));
 
-    await query('BEGIN');
+    // withTransaction: BEGIN/COMMIT sullo stesso client dedicato. Il vecchio
+    // pattern query('BEGIN') passava dal pool e ogni statement poteva finire
+    // su una connessione diversa (nessuna atomicità reale).
+    await withTransaction(async (q) => {
+      for (const p of phases) {
+        const wd =
+          p.planned_start && p.planned_end
+            ? calculateNetworkDays(new Date(p.planned_start), new Date(p.planned_end), holidays)
+            : 0;
 
-    for (const p of phases) {
-      const wd =
-        p.planned_start && p.planned_end
-          ? calculateNetworkDays(new Date(p.planned_start), new Date(p.planned_end), holidays)
-          : 0;
+        const contingencyPct = p.contingency_pct !== undefined ? p.contingency_pct : 0;
 
-      const contingencyPct = p.contingency_pct !== undefined ? p.contingency_pct : 0;
-
-      if (p.display_name !== undefined && p.display_name.trim() !== '') {
-        await query(
-          `UPDATE "ProjectPhase"
-           SET planned_start = $1, planned_end = $2, working_days = $3,
-               planned_hours = $4, contingency_pct = $5, display_name = $6
-           WHERE id = $7`,
-          [p.planned_start || null, p.planned_end || null, wd, wd * 8, contingencyPct, p.display_name.trim(), p.phase_id],
-        );
-      } else {
-        await query(
-          `UPDATE "ProjectPhase"
-           SET planned_start = $1, planned_end = $2, working_days = $3,
-               planned_hours = $4, contingency_pct = $5
-           WHERE id = $6`,
-          [p.planned_start || null, p.planned_end || null, wd, wd * 8, contingencyPct, p.phase_id],
-        );
+        // AND project_id: senza, un phase_id arbitrario modificherebbe fasi di
+        // altri progetti (ownership cross-progetto).
+        let updateRes;
+        if (p.display_name !== undefined && p.display_name.trim() !== '') {
+          updateRes = await q(
+            `UPDATE "ProjectPhase"
+             SET planned_start = $1, planned_end = $2, working_days = $3,
+                 planned_hours = $4, contingency_pct = $5, display_name = $6
+             WHERE id = $7 AND project_id = $8`,
+            [p.planned_start || null, p.planned_end || null, wd, wd * 8, contingencyPct, p.display_name.trim(), p.phase_id, projectId],
+          );
+        } else {
+          updateRes = await q(
+            `UPDATE "ProjectPhase"
+             SET planned_start = $1, planned_end = $2, working_days = $3,
+                 planned_hours = $4, contingency_pct = $5
+             WHERE id = $6 AND project_id = $7`,
+            [p.planned_start || null, p.planned_end || null, wd, wd * 8, contingencyPct, p.phase_id, projectId],
+          );
+        }
+        if (updateRes.rowCount === 0) {
+          throw Object.assign(new Error(`Phase ${p.phase_id} not found in this project`), { status: 404 });
+        }
       }
-    }
 
-    await query(
-      `INSERT INTO "Baseline" (project_id) VALUES ($1)
-       ON CONFLICT (project_id) DO NOTHING`,
-      [projectId],
-    );
+      await q(
+        `INSERT INTO "Baseline" (project_id) VALUES ($1)
+         ON CONFLICT (project_id) DO NOTHING`,
+        [projectId],
+      );
+    });
 
-    await query('COMMIT');
     res.json({ success: true });
   } catch (err: any) {
-    await query('ROLLBACK');
+    if (err?.status === 404) return res.status(404).json({ error: err.message });
     console.error(err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -230,7 +238,8 @@ router.post('/lock', async (req, res) => {
     const totalForecast     = phases.reduce((s, p) => s + p.budget + p.budget * (p.contingency_pct / 100), 0);
     const totalWorkingDays  = phases.reduce((s, p) => s + p.working_days, 0);
 
-    await query('BEGIN');
+    // Singolo statement: l'atomicità è garantita da Postgres, il BEGIN/COMMIT
+    // esplicito via pool era rotto (connessioni diverse per statement).
     await query(
       `INSERT INTO "Baseline"
          (project_id, locked_at,
@@ -245,7 +254,6 @@ router.post('/lock', async (req, res) => {
              phase_snapshot_at_lock     = EXCLUDED.phase_snapshot_at_lock`,
       [projectId, totalBudget, totalForecast, totalWorkingDays, JSON.stringify(phases)],
     );
-    await query('COMMIT');
 
     const result = await query(
       `SELECT locked_at, total_budget_at_lock, total_forecast_at_lock,
@@ -261,9 +269,8 @@ router.post('/lock', async (req, res) => {
       total_working_days_at_lock: Number(row.total_working_days_at_lock ?? 0),
     });
   } catch (err: any) {
-    await query('ROLLBACK').catch(() => {});
     console.error(err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

@@ -1,16 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import AppNav from '../components/AppNav';
+import CapacityHeatmap from '../components/CapacityHeatmap';
 import { fetchResourceRegistry } from '../api/allocation';
+import { useFetch } from '../hooks/useFetch';
 import { fmtWeek } from '../utils/networkDays';
-import type { ResourceRegistryData, ResourceRegistryRow } from '../types';
+import type { ResourceRegistryRow } from '../types';
 import { formatCurrency } from '../utils/formatCurrency';
-
-function fteSemaphore(total: number): { icon: string; class: string } {
-  if (total === 0)     return { icon: '⚪', class: 'text-text-dim' };
-  if (total > 1.0)     return { icon: '🔴', class: 'text-rag-red font-bold' };
-  if (total >= 0.8)    return { icon: '✅', class: 'text-rag-green' };
-  return               { icon: '🟡', class: 'text-rag-yellow' };
-}
+import { fteMeta } from '../utils/fteSemaphore';
 
 function fmtFTE(n: number) {
   return n === 0 ? '—' : `${(n * 100).toFixed(0)}%`;
@@ -47,13 +43,13 @@ function ResourceRow({ row, weeks, filterProject, getTotal }: ResourceRowProps) 
         </td>
         {weeks.map((w) => {
           const total = getTotal(w);
-          const { icon, class: cls } = fteSemaphore(total);
+          const { icon, ariaLabel, textClass } = fteMeta(total);
           return (
             <td key={w} className="px-3 py-3 text-center">
-              <div className={`text-sm font-semibold ${cls}`}>
+              <div className={`text-sm font-semibold ${textClass}`}>
                 {fmtFTE(total)}
               </div>
-              <div className="text-xs">{icon}</div>
+              <div className="text-xs" role="img" aria-label={ariaLabel}>{icon}</div>
             </td>
           );
         })}
@@ -80,15 +76,55 @@ function ResourceRow({ row, weeks, filterProject, getTotal }: ResourceRowProps) 
 }
 
 export default function Resources() {
-  const [data, setData] = useState<ResourceRegistryData | null>(null);
-  const [loading, setLoading] = useState(true);
   const [filterResource, setFilterResource] = useState('');
   const [filterProject, setFilterProject] = useState('');
   const [showClosed, setShowClosed] = useState(false);
 
-  useEffect(() => {
-    fetchResourceRegistry().then(setData).finally(() => setLoading(false));
-  }, []);
+  const { data, loading, error, reload } = useFetch(fetchResourceRegistry, []);
+
+  // Filter allocations by closed status
+  const visibleRows = useMemo(() => {
+    if (!data) return [];
+    return data.rows.map((r) => ({
+      ...r,
+      allocations: r.allocations.filter((a) =>
+        showClosed || (a.project_status !== 'closed' && a.project_status !== 'archived')
+      ),
+    })).filter((r) => r.allocations.length > 0 || !filterResource);
+  }, [data, showClosed, filterResource]);
+
+  // Weeks visible given current showClosed filter
+  const visibleWeeks = useMemo(() => {
+    if (!data) return [];
+    const visibleWeekSet = new Set(visibleRows.flatMap((r) => r.allocations.map((a) => a.week_start)));
+    return data.weeks.filter((w) => visibleWeekSet.has(w));
+  }, [data, visibleRows]);
+
+  const visibleTotals = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of visibleRows) {
+      for (const a of r.allocations) {
+        const key = `${r.resource.id}:${a.week_start}`;
+        m.set(key, (m.get(key) ?? 0) + a.fte);
+      }
+    }
+    return m;
+  }, [visibleRows]);
+
+  const getVisibleTotal = (row: ResourceRegistryRow, week: string): number =>
+    visibleTotals.get(`${row.resource.id}:${week}`) ?? 0;
+
+  const overallocated = visibleRows.filter((r) =>
+    visibleWeeks.some((w) => getVisibleTotal(r, w) > 1.0)
+  );
+
+  const allProjects = Array.from(new Set(visibleRows.flatMap((r) => r.allocations.map((a) => a.project_name))));
+  const allResourceNames = data ? data.rows.map((r) => r.resource.name) : [];
+
+  const filteredRows = visibleRows.filter((r) => {
+    if (filterResource && r.resource.name !== filterResource) return false;
+    return true;
+  });
 
   if (loading) return (
     <div className="min-h-screen bg-base flex items-center justify-center">
@@ -96,36 +132,19 @@ export default function Resources() {
     </div>
   );
 
-  if (!data) return null;
-
-  // Filter allocations by closed status
-  const visibleRows = data.rows.map((r) => ({
-    ...r,
-    allocations: r.allocations.filter((a) =>
-      showClosed || (a.project_status !== 'closed' && a.project_status !== 'archived')
-    ),
-  })).filter((r) => r.allocations.length > 0 || !filterResource);
-
-  // Weeks visible given current showClosed filter
-  const visibleWeekSet = new Set(visibleRows.flatMap((r) => r.allocations.map((a) => a.week_start)));
-  const visibleWeeks = data.weeks.filter((w) => visibleWeekSet.has(w));
-
-  const allProjects = Array.from(new Set(visibleRows.flatMap((r) => r.allocations.map((a) => a.project_name))));
-  const allResourceNames = data.rows.map((r) => r.resource.name);
-
-  // BUG-05: compute visible total from filtered allocations, not pre-computed totals
-  function getVisibleTotal(row: typeof visibleRows[number], week: string): number {
-    return row.allocations.filter(a => a.week_start === week).reduce((s, a) => s + a.fte, 0);
-  }
-
-  const overallocated = visibleRows.filter((r) =>
-    visibleWeeks.some((w) => getVisibleTotal(r, w) > 1.0)
+  if (error || !data) return (
+    <div className="min-h-screen bg-base text-text-primary">
+      <AppNav />
+      <main className="max-w-7xl mx-auto px-6 py-12">
+        <div className="bg-rag-red/10 border border-rag-red/30 rounded-xl px-5 py-4 text-rag-red text-sm flex items-center justify-between">
+          <span>{error ?? 'Registro non disponibile.'}</span>
+          <button onClick={reload} className="text-xs border border-rag-red/40 rounded-lg px-3 py-1.5 hover:bg-rag-red/10 transition-colors">
+            Riprova
+          </button>
+        </div>
+      </main>
+    </div>
   );
-
-  const filteredRows = visibleRows.filter((r) => {
-    if (filterResource && r.resource.name !== filterResource) return false;
-    return true;
-  });
 
   return (
     <div className="min-h-screen bg-base text-text-primary">
@@ -138,6 +157,9 @@ export default function Resources() {
             Vista aggregata delle allocazioni cross-project. Si aggiorna automaticamente quando le allocazioni vengono salvate.
           </p>
         </div>
+
+        {/* Capacity heatmap (demand vs supply) */}
+        <CapacityHeatmap />
 
         {/* Overallocation alerts */}
         {overallocated.length > 0 && (
@@ -205,6 +227,7 @@ export default function Resources() {
         </div>
 
         {/* Table */}
+        <p className="md:hidden text-xs text-text-dim">↔ Scorri in orizzontale o usa il desktop per la vista settimanale completa.</p>
         <div className="relative rounded-2xl border border-border overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

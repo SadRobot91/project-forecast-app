@@ -8,7 +8,8 @@ Single Source of Truth per Claude Code. Aggiorna questo file ad ogni cambiamento
 
 Web application che replica e supera `Project_Forecast_v16.xlsx`. Gestisce budget,
 allocazione risorse, milestone e Gantt per più progetti e più PM, con pull opzionale
-da **Keyedin** per i dati di avanzamento (actuals).
+da **Keyedin** per i dati di avanzamento (actuals) e funzionalità di Knowledge Graph
+(decisioni, rischi, slippage, retrospettive, progetti simili).
 
 **Fase corrente:** POC con target deploy Vercel — Docker Compose disponibile per DB locale.
 **Obiettivo:** proposta interna se il POC convince.
@@ -17,17 +18,18 @@ da **Keyedin** per i dati di avanzamento (actuals).
 
 | Layer | Tecnologia |
 |---|---|
-| Frontend | React 18 + Vite + TypeScript 5 + React Router v6 |
+| Frontend | React 18 + Vite + TypeScript 5 + React Router v6 (pagine in `React.lazy`) |
 | Styling | Tailwind CSS 3 (tema dark custom) |
-| Backend | Node.js + Express 4 + TypeScript 5 + CORS |
+| Backend | Node.js + Express 4 + TypeScript 5 + CORS (allowlist via `CORS_ORIGIN`) |
 | Database | PostgreSQL (driver `pg`) — DB locale via Docker Compose |
-| Auth | **Supabase Auth** (`supabase.auth.signInWithPassword`) — route `/api/auth` attiva; `requireAuth` middleware e filtro `pm_id` ancora da fare (Step H) |
-| Test (BE) | Jest + ts-jest + Supertest |
-| Test (FE) | **Vitest** (`vitest.config.ts`, `frontend/src/test/setup.ts`) |
+| Auth | **Supabase Auth** — `requireAuth` (token + cache TTL 60s) e `requireProjectAccess` (ownership `pm_id`, bypass ruolo `dm`) **attivi** su tutte le route dati |
+| AI (opzionale) | Provider pattern: `intelligence/` (Claude API) e `embeddings/` (OpenAI) con NoOp fallback se le API key mancano |
+| Test (BE) | Jest + ts-jest + Supertest (252 test) |
+| Test (FE) | **Vitest** — `pnpm test` da `frontend/` |
 | Build (BE) | `tsc` → `dist/` |
-| Build (FE) | `vite build` |
+| Build (FE) | `vite build` — chunk `vendor` e `supabase` separati (manualChunks) |
 | Dev server (BE) | `nodemon` su `src/index.ts` |
-| Deploy | **Vercel** (`vercel.json`) — frontend static + backend serverless |
+| Deploy | **Vercel** (`vercel.json`) — frontend static (con fallback SPA) + backend serverless (`export default app`) |
 | Monorepo | **NX** + **pnpm** (`pnpm-workspace.yaml`) |
 | Integrazione esterna | Keyedin API (stub attivo, fallback manuale sempre disponibile) |
 
@@ -40,91 +42,84 @@ project-forecast-app/
 ├── backend/
 │   ├── Dockerfile
 │   ├── src/
-│   │   ├── index.ts                  # Entry point Express, mount router, cors()
+│   │   ├── index.ts                  # Entry point Express; guard auth+ownership su /api/projects/:id; export default app
+│   │   ├── middleware/
+│   │   │   ├── requireAuth.ts        # Bearer token via Supabase + cache TTL 60s + requireRole
+│   │   │   └── requireProjectAccess.ts # Ownership pm_id (404 per progetti altrui; dm bypassa)
 │   │   ├── db/
-│   │   │   ├── index.ts              # Pool pg + helper query()
+│   │   │   ├── index.ts              # Pool pg (max via PG_POOL_MAX) + query() + withTransaction()
 │   │   │   ├── supabase.ts           # Supabase client (solo auth — NON per query dati)
-│   │   │   ├── migrate.ts            # Runner automatico migrazioni (npm run migrate)
-│   │   │   ├── seed.ts               # Seed dati realistici (npm run seed)
-│   │   │   └── migrations/           # 001–008 SQL sequenziali
+│   │   │   ├── migrate.ts            # Runner automatico migrazioni (pnpm run migrate)
+│   │   │   ├── seed.ts               # Seed dati realistici (pnpm run seed)
+│   │   │   └── migrations/           # 001–014 SQL sequenziali (014 = indici FK core)
 │   │   ├── routes/                   # Un file per dominio, Router({ mergeParams: true })
 │   │   │   ├── auth.ts               # POST /api/auth/login|logout via Supabase Auth
-│   │   │   ├── projects.ts
-│   │   │   ├── phases.ts
-│   │   │   ├── baseline.ts
-│   │   │   ├── allocations.ts
-│   │   │   ├── resources.ts
-│   │   │   ├── ongoing.ts
-│   │   │   ├── gantt.ts
-│   │   │   ├── dashboard.ts
+│   │   │   ├── projects.ts           # Lista (filtro pm_id), /similar (tag-overlap), PATCH status
+│   │   │   ├── phases.ts             # PATCH working-copy date/status
+│   │   │   ├── baseline.ts           # GET/PUT baseline + POST lock (BAC snapshot)
+│   │   │   ├── allocations.ts        # GET matrice + PUT batch con cap FTE
+│   │   │   ├── resources.ts          # CRUD risorse + /registry + /capacity-heatmap (banda colore demand-vs-supply, cap 1.0 FTE) cross-project
+│   │   │   ├── ongoing.ts            # Snapshot actuals + sync Keyedin
+│   │   │   ├── gantt.ts              # Task e milestone CRUD
+│   │   │   ├── dashboard.ts          # KPI + budget per fase + milestone
+│   │   │   ├── knowledge.ts          # Scoping (PATCH /:id), decisions, risks, slippage, retrospectives
+│   │   │   ├── intelligence.ts       # GET /similar-semantic (kNN cosine) + /scoping-insight (risk brief) + /retro-questions (RetroContext da slippage+variance); tutto graceful con NoOp senza ANTHROPIC_API_KEY
 │   │   │   ├── phaseTemplates.ts
-│   │   │   └── routes.test.ts        # Integration tests (supertest)
-│   │   └── services/
-│   │       ├── computations.ts       # NETWORKDAYS, validateFTE, RAG, revisedForecast
-│   │       ├── computations.test.ts
-│   │       ├── consistency.test.ts   # Floating-point edge cases RAG + BE/FE divergence
-│   │       ├── allocationAggregator.ts  # Single source of truth Σ FTE cross-project
-│   │       ├── allocationAggregator.test.ts
-│   │       └── ongoing/
-│   │           ├── OngoingDataProvider.ts   # Interface
-│   │           ├── KeyedinApiProvider.ts    # Stub reale
-│   │           └── ManualFallbackProvider.ts
-│   ├── package.json
-│   ├── tsconfig.json                 # target ES2022, strict: true, rootDir: src/
-│   └── .env.example
+│   │   │   └── routes.test.ts        # Integration tests (supertest, DB mockato)
+│   │   ├── services/
+│   │   │   ├── computations.ts       # NETWORKDAYS, validateFTE, RAG, revisedForecast
+│   │   │   ├── allocationAggregator.ts  # SSoT Σ FTE: getWeeklyTotal(+Batch), canAllocate, registry
+│   │   │   ├── phaseFinancialEngine.ts  # EAC/forecast per fase + rollup progetto
+│   │   │   ├── embeddings/           # EmbeddingProvider: OpenAI | NoOp
+│   │   │   ├── intelligence/         # IntelligenceProvider: Claude | NoOp
+│   │   │   └── ongoing/              # OngoingDataProvider: KeyedinApi (stub) | ManualFallback
+│   │   ├── types/express.d.ts        # Estensione Request.auth
+│   │   ├── package.json
+│   │   ├── tsconfig.json             # target ES2022, strict: true, rootDir: src/
+│   │   └── .env.example
 ├── frontend/
 │   ├── Dockerfile
 │   ├── src/
-│   │   ├── App.tsx                   # BrowserRouter + AuthProvider + Routes
+│   │   ├── App.tsx                   # BrowserRouter + AuthProvider + Routes (lazy + Suspense)
 │   │   ├── main.tsx
 │   │   ├── types/index.ts            # Tutti i tipi di dominio condivisi
 │   │   ├── api/                      # Un file per dominio, usa apiClient()
 │   │   │   ├── client.ts             # fetch wrapper con Bearer token
-│   │   │   ├── auth.ts
-│   │   │   ├── supabase.ts           # Supabase client frontend (VITE_SUPABASE_*)
-│   │   │   ├── projects.ts
-│   │   │   ├── baseline.ts
-│   │   │   ├── allocation.ts
-│   │   │   ├── ongoing.ts
-│   │   │   ├── gantt.ts
-│   │   │   └── phaseTemplates.ts
-│   │   ├── contexts/
-│   │   │   └── AuthContext.tsx       # token + user in localStorage
+│   │   │   ├── auth.ts / supabase.ts
+│   │   │   ├── projects.ts / baseline.ts / allocation.ts / ongoing.ts
+│   │   │   ├── gantt.ts / phaseTemplates.ts / knowledge.ts
+│   │   ├── contexts/AuthContext.tsx  # token + user in localStorage
 │   │   ├── components/               # UI primitivi riusabili
-│   │   │   ├── AppNav.tsx
-│   │   │   ├── FTECell.tsx
-│   │   │   ├── RAGBadge.tsx
-│   │   │   ├── BudgetBar.tsx
-│   │   │   ├── DateInput.tsx
-│   │   │   ├── ConfirmModal.tsx
-│   │   │   └── ProtectedRoute.tsx
-│   │   ├── pages/                    # Una pagina per route
-│   │   │   ├── Login.tsx
-│   │   │   ├── Projects.tsx
-│   │   │   ├── Dashboard.tsx
-│   │   │   ├── Pianificazione.tsx    # Tab Fasi + Tab Risorse (allocation matrix)
-│   │   │   ├── Avanzamento.tsx       # Ongoing snapshot + sync Keyedin
-│   │   │   ├── Gantt.tsx
-│   │   │   ├── Resources.tsx
-│   │   │   └── Settings.tsx
-│   │   ├── test/
-│   │   │   └── setup.ts              # Vitest setup
-│   │   ├── mocks/mockData.ts         # Dati realistici per VITE_USE_MOCK=true
-│   │   └── utils/networkDays.ts      # Utility date FE (weeksInRange, fmtWeek)
+│   │   │   ├── AppNav.tsx, FTECell.tsx, RAGBadge.tsx, BudgetBar.tsx
+│   │   │   ├── DateInput.tsx, ConfirmModal.tsx, RequireAuth.tsx
+│   │   │   ├── RetrospectiveModal.tsx, SlippageModal.tsx, SimilarProjects.tsx
+│   │   │   └── ProjectMemoryTab.tsx  # Timeline KG (decisioni+rischi+slippage+retrospettive) montata come tab in Dashboard
+│   │   ├── api/                      # Un file per dominio, usa apiClient()
+│   │   │   ├── ...knowledge.ts       # getDecisions/getRisks/getSlippageEvents/getRetrospectives/fetchSimilarProjects — tutti con withMock
+│   │   │   └── intelligence.ts       # fetchSimilarSemantic (stub → /api/projects/:id/similar-semantic) con withMock
+│   │   ├── pages/                    # Una pagina per route (tutte lazy)
+│   │   │   ├── Login.tsx, Projects.tsx
+│   │   │   ├── Dashboard.tsx         # Tab 'overview' + tab 'Memoria Progetto' (ProjectMemoryTab); SimilarProjects in overview
+│   │   │   ├── Pianificazione.tsx    # Tab Fasi + Tab Risorse (matrice FTE memoizzata)
+│   │   │   ├── Avanzamento.tsx       # Snapshot ongoing + sync Keyedin
+│   │   │   ├── Gantt.tsx, Resources.tsx, Settings.tsx
+│   │   ├── test/setup.ts             # Vitest setup
+│   │   ├── mocks/mockData.ts         # Dati per VITE_USE_MOCK=true — include MOCK_SIMILAR_PROJECTS, MOCK_SIMILAR_SEMANTIC, MOCK_DECISIONS, MOCK_RISKS, MOCK_SLIPPAGE, MOCK_RETROSPECTIVES
+│   │   └── utils/                    # networkDays.ts, formatCurrency.ts
 │   ├── package.json
-│   ├── vite.config.ts
+│   ├── vite.config.ts                # manualChunks vendor/supabase
 │   ├── vitest.config.ts
 │   ├── tailwind.config.js
-│   ├── tsconfig.json
-│   └── .env.local                    # gitignored — non committare
+│   └── .env.local                    # gitignored e untracked — non committare
 ├── docker-compose.yml                # PostgreSQL 16 locale (porta 5432)
-├── vercel.json                       # Deploy: frontend static + backend serverless
-├── nx.json                           # NX monorepo config
-├── pnpm-workspace.yaml               # Workspace: frontend + backend
+├── vercel.json                       # /api → backend; /assets e file statici → frontend; fallback SPA → index.html
+├── nx.json / pnpm-workspace.yaml
 ├── AGENTS.md                         # Design document originale (feature spec)
-├── ARCHITECTURE_AS_IS.md             # Stato attuale, problematiche aperte, ordine fix
-├── NEXT_STEPS.md                     # Roadmap steps con stato (done / in progress)
-├── PROMPT.md                         # Prompt di sviluppo per sessioni Claude
+├── ARCHITECTURE_AS_IS.md             # Stato storico (vedi anche report audit)
+├── NEXT_STEPS_COMPLETO.md            # Roadmap steps con stato
+├── report-step1..6-*.md              # Audit 2026-06: struttura, visual, componenti, perf, security, priority matrix
+├── report-decisions.md               # Decisioni aperte (D1-D4) con opzioni e trade-off
+├── fix-log.md                        # Changelog dei fix applicati post-audit
 └── CLAUDE.md                         # Questo file
 ```
 
@@ -133,77 +128,44 @@ project-forecast-app/
 ## Commands
 
 Il progetto usa **pnpm** come package manager e **NX** come monorepo runner.
-I comandi vanno eseguiti dalla rispettiva sottocartella (`backend/` o `frontend/`),
-oppure dalla root con NX.
 
 ### Setup iniziale (prima volta)
 
 ```bash
-# Dalla root del monorepo
-pnpm install
-
-# Avvia il DB locale con Docker Compose
-docker-compose up -d
+pnpm install          # dalla root
+docker-compose up -d  # DB locale
 ```
 
-### Backend
+### Backend (`cd backend`)
 
 ```bash
-cd backend
-
-# Dev (nodemon, ricarica automatica)
-pnpm run dev          # porta 3000
-
-# Build TypeScript
-pnpm run build        # output in dist/
-
-# Test (tutti, in band)
-pnpm test
-
-# Test watch
+pnpm run dev          # nodemon, porta 3000
+pnpm run build        # tsc → dist/
+pnpm test             # Jest (--runInBand)
 pnpm run test:watch
 ```
 
-### Frontend
+### Frontend (`cd frontend`)
 
 ```bash
-cd frontend
-
-# Dev server (Vite HMR)
-pnpm run dev          # porta 5173
-
-# Build produzione
-pnpm run build        # output in dist/
-
-# Test (Vitest)
-pnpm test
-
-# Lint
+pnpm run dev          # Vite HMR, porta 5173
+pnpm run build        # tsc + vite build
+pnpm test             # Vitest (run singolo)
+pnpm run test:watch   # Vitest watch
 pnpm run lint
 ```
 
 ### Database — runner automatico
 
-Le migrazioni sono ora gestite dal runner `backend/src/db/migrate.ts`,
-che traccia le migrazioni eseguite in una tabella `migrations`.
-
 ```bash
 cd backend
-
-# Applica tutte le migrazioni non ancora eseguite
-pnpm run migrate
-
-# Popola il DB con dati realistici (per sviluppo locale)
-pnpm run seed
+pnpm run migrate      # applica le migrazioni non ancora eseguite (tracking in tabella `migrations`)
+pnpm run seed         # dati realistici per sviluppo locale
 ```
 
-Alternativamente, applicare manualmente con `psql`:
-```bash
-psql $DATABASE_URL -f backend/src/db/migrations/001_initial_schema.sql
-# ... fino a 008_baseline_snapshot.sql
-```
-
-La prossima migrazione sarà `009_ongoing_phase_id.sql` (Step E).
+Migrazioni esistenti: 001–014. La prossima sarà `015_*.sql`.
+**Nota:** la 013 richiede l'estensione `pgvector` sul server Postgres; senza, il runner
+si ferma lì (le feature di similarità semantica restano disattivate, NoOp provider).
 
 ---
 
@@ -211,68 +173,69 @@ La prossima migrazione sarà `009_ongoing_phase_id.sql` (Step E).
 
 ### Pattern principali
 
-**Backend — Layered / Route-Service**
+**Backend — Layered / Route-Service con guard di sicurezza**
 
 ```
 HTTP Request
+  → requireAuth (middleware)           — Bearer token Supabase + cache TTL 60s
+  → requireProjectAccess (middleware)  — ownership pm_id su /api/projects/:id/* (dm bypassa)
   → Express Router (routes/*.ts)       — validazione input, query DB dirette
   → Services (services/*.ts)           — logica pura, testabile senza DB
-  → db/index.ts (pg Pool)              — query helper per tutti i dati
+  → db/index.ts (pg Pool)              — query() + withTransaction()
   → db/supabase.ts (Supabase client)   — SOLO per autenticazione
 ```
 
-I router usano `query()` dal pool direttamente per operazioni CRUD.
-`db/supabase.ts` è usato **esclusivamente** da `routes/auth.ts` per gestire
-login/logout via Supabase Auth — non sostituisce pg per le query sui dati.
+Il guard `requireAuth + requireProjectAccess` è montato **una sola volta** sul prefisso
+`/api/projects/:id` in `index.ts` e copre tutte le route figlie. `requireAuth` è
+idempotente (`req.auth` già presente → next).
 
-La logica computazionale è estratta in servizi puri:
-- `computations.ts` — funzioni pure, nessun DB
-- `allocationAggregator.ts` — dependency injection via `query` param opzionale
-  (permette unit test senza DB reale)
+**Transazioni:** SEMPRE tramite `withTransaction()` di `db/index.ts` (client dedicato).
+MAI `query('BEGIN')` sul pool: ogni chiamata può finire su una connessione diversa.
 
-**Provider Pattern per Keyedin**
+**Provider Pattern (×3)**
 
 ```
-OngoingDataProvider (interface)
-  ├── KeyedinApiProvider     ← stub, attivabile quando API disponibile
-  └── ManualFallbackProvider ← sempre disponibile
+OngoingDataProvider    → KeyedinApiProvider (stub) | ManualFallbackProvider
+IntelligenceProvider   → ClaudeProvider | NoOpProvider     (ANTHROPIC_API_KEY)
+EmbeddingProvider      → OpenAIEmbeddingProvider | NoOp    (EMBEDDING_API_KEY)
 ```
 
 **Frontend — Feature Pages + API layer**
 
 ```
-Page (pages/*.tsx)
+Page (pages/*.tsx, lazy)
   → API module (api/*.ts)              — wrappa apiClient()
   → api/client.ts                      — fetch con Bearer token, error handling
   → AuthContext                        — token + user da localStorage
 ```
 
-Nessun global state manager (no Redux/Zustand). Lo stato è locale ai componenti
-pagina o sollevato al livello minimo necessario.
+Nessun global state manager. Stato locale ai componenti pagina.
 
 ### Data Model (tabelle principali)
 
 | Tabella | Ruolo |
 |---|---|
-| `User` | PM e DM — password_hash, role (pm/dm) |
-| `Project` | Progetto con pm_id, status, keyedin_code, share_token |
-| `ProjectPhase` | 5 fasi sequenziali per progetto, display_name configurabile |
+| `User` | PM e DM — role (pm/dm), supabase_uid |
+| `Project` | pm_id (ownership), status, keyedin_code, description, tags (jsonb), share_token (dormiente), description_embedding (pgvector mig 013 — letto da `/similar-semantic`) |
+| `ProjectPhase` | Fasi sequenziali per progetto, display_name configurabile |
 | `Baseline` | Lock BAC: total_budget_at_lock, phase_snapshot_at_lock (JSONB) |
 | `Resource` | Registry centrale condiviso — day_rate |
+| `ResourceDayRateHistory` | Storico rate per analisi point-in-time |
 | `AllocationEntry` | resource × project × phase × week_start → fte, weekly_cost (materializzato) |
-| `OngoingSnapshot` | Actuals per progetto (ore, costo, giorni) — source: manual/keyedin_api |
+| `OngoingSnapshot` | Actuals per progetto/fase — source: manual/keyedin_api |
 | `GanttTask` | Task e milestone per fase |
 | `PublicHoliday` | Festività IT 2025–2027 (pre-seeded) |
 | `PhaseTemplate` | Default display_name e contingency_pct per nuovi progetti |
+| `Decision`, `Risk`, `SlippageEvent`, `Retrospective` | Knowledge Graph (mig. 012) |
 
 ### Calcoli chiave
 
-- `weekly_cost` è materializzato all'INSERT: `day_rate × fte × working_days_in_week`
+- `weekly_cost` materializzato all'INSERT: `day_rate × fte × working_days_in_week`
 - `phase.budget` = `SUM(weekly_cost)` calcolato live a ogni GET
-- `Baseline.total_budget_at_lock` = snapshot immutabile al momento del lock (BAC)
-- `revised_forecast` = media tra time-based e cost-based, flat di progetto (Step F cambierà questo)
+- `Baseline.total_budget_at_lock` = snapshot immutabile al lock (BAC); la working copy resta modificabile
+- `revised_forecast` **per fase** via `phaseFinancialEngine.ts` (completed → cost_spent; in_progress → media time/cost-based; not_started → budget) con rollup di progetto
 - RAG status: IN_LINEA ≤ 1.05 · BAC, A_RISCHIO ≤ 1.15, FUORI_BUDGET > 1.15
-- FTE cap: `canAllocate()` in `allocationAggregator.ts` — cap 1.0 per (resource, week)
+- FTE cap 1.0 per (resource, week): `canAllocate()` / `getWeeklyTotalsBatch()` in `allocationAggregator.ts` — il PUT allocation verifica in batch e usa advisory lock transazionali
 
 ---
 
@@ -281,54 +244,44 @@ pagina o sollevato al livello minimo necessario.
 ### TypeScript
 
 - `strict: true` su entrambi i progetti
-- Nessun `any` esplicito nei servizi — usato solo nelle query param pg dove necessario
-- I tipi di dominio condivisi frontend vivono in `frontend/src/types/index.ts`
-- Backend non ha un file di tipi condivisi: i tipi sono inline nei route file
+- Nessun `any` esplicito nei servizi — tollerato solo nelle query param pg
+- Tipi di dominio condivisi frontend in `frontend/src/types/index.ts`; backend inline nei route file
 
 ### Naming
 
-- File: `camelCase.ts` per servizi e utility, `PascalCase.tsx` per componenti React
+- File: `camelCase.ts` per servizi/utility, `PascalCase.tsx` per componenti React
 - Tabelle DB: `PascalCase` con doppi apici in SQL (es. `"AllocationEntry"`)
-- Route param: `req.params.id` per il project id, `req.params.pid` per phase id
-- Variabili ambiente backend: `SCREAMING_SNAKE_CASE`, prefisso `KEYEDIN_` per Keyedin
-- Variabili ambiente frontend: prefisso `VITE_`
+- Route param: `req.params.id` per il project id, `req.params.pid`/`phase_id` per phase id
+- Env backend: `SCREAMING_SNAKE_CASE`, prefisso `KEYEDIN_` per Keyedin; frontend: prefisso `VITE_`
 
 ### Gestione errori (backend)
 
-- `res.status(404).json({ error: 'Resource not found' })` per not found
-- `res.status(409).json({ error: '...', ...details })` per violazioni di business (FTE cap)
-- `res.status(400)` per input mancante o malformato
-- `res.status(500).json({ error: err.message })` come catch finale
-- I blocchi `try/catch` wrappano l'intero handler del router
+- `404 { error: 'Resource not found' }` per not found **e per risorse di altri PM** (mai 403: non confermare l'esistenza)
+- `409 { error, ...details }` per violazioni di business (FTE cap con breakdown)
+- `400` per input mancante o malformato
+- `500 { error: 'Internal server error' }` — **mai** `err.message` nel body (leak di dettagli DB); sempre `console.error(err)` per i log
+- I blocchi `try/catch` wrappano l'intero handler
 
 ### Testing
 
-**Backend (Jest + ts-jest):**
-- Test unitari in `services/*.test.ts` — zero dipendenze DB, DI via `query` param
-- `services/consistency.test.ts` — edge case floating-point (RAG near 1.05/1.15) e divergenza BE/FE su NETWORKDAYS con festività
-- Test di integrazione in `routes/routes.test.ts` — usa `supertest`
-- Esecuzione: `pnpm test --runInBand` (sequenziale, no race condition su DB)
+**Backend (Jest + ts-jest):** unit test in `services/*.test.ts` (DI via `query` param,
+zero DB), integrazione in `routes/routes.test.ts` (supertest, db mockato — include i
+test di regressione security su ownership e validazione). Esecuzione: `pnpm test`
+(già `--runInBand`).
 
-**Frontend (Vitest):**
-- `utils/networkDays.test.ts` — test utility date lato client
-- Setup in `src/test/setup.ts`
-- Esecuzione: `pnpm test` dalla cartella `frontend/`
-
-**Nota:** `consistency.test.ts` include un test (`RAGStatus floating point near 1.05`)
-che documenta un comportamento atteso non ancora implementato — `calculateRAGStatus`
-non ha ancora epsilon tolerance. Il test è intenzionalmente failing come reminder.
+**Frontend (Vitest):** `pnpm test` da `frontend/` (utils date e currency; setup in
+`src/test/setup.ts`).
 
 ### Mock mode (frontend)
 
-`VITE_USE_MOCK=true` in `frontend/.env.local` bypassa le chiamate API reali e usa
-`frontend/src/mocks/mockData.ts`. Il token mock è `mock-jwt-token-dev`.
-Usare mock mode quando il backend non è avviato o per sviluppo UI puro.
+`VITE_USE_MOCK=true` in `frontend/.env.local` bypassa le API reali e usa
+`frontend/src/mocks/mockData.ts`. Token mock: `mock-jwt-token-dev`.
 
 ### Stile UI
 
 - Tema dark-only, palette custom in `tailwind.config.js`
 - Colori semantici: `accent` (#6c63ff), `accent-cyan`, `rag-green/yellow/red`
-- Font: Inter (system fallback)
+- Font: Inter (Google Fonts, fallback system)
 - Nessuna libreria di componenti esterna — tutto custom con Tailwind
 
 ---
@@ -338,29 +291,25 @@ Usare mock mode quando il backend non è avviato o per sviluppo UI puro.
 ### 1. Aggiungere una nuova route API
 
 1. Creare `backend/src/routes/myFeature.ts` con `Router({ mergeParams: true })`
-2. Aggiungere i handler con `try/catch` standard (vedi pattern in `routes/phases.ts`)
-3. Importare e montare in `backend/src/index.ts`: `app.use('/api/...', myFeatureRouter)`
-4. Aggiungere tipi corrispondenti in `frontend/src/types/index.ts`
-5. Creare `frontend/src/api/myFeature.ts` che usa `apiClient()`
-6. Se necessario aggiornare `frontend/src/mocks/mockData.ts`
+2. Handler con try/catch standard e 500 generico (vedi `routes/ongoing.ts` come modello)
+3. Montare in `backend/src/index.ts` — se è sotto `/api/projects/:id` il guard
+   auth+ownership è già attivo sul prefisso; altrimenti aggiungere `requireAuth`
+4. Validare l'input nel handler (vedi `knowledge.ts` come riferimento)
+5. Tipi in `frontend/src/types/index.ts` + modulo `frontend/src/api/myFeature.ts`
+6. Aggiornare `frontend/src/mocks/mockData.ts` se serve
 
 ### 2. Aggiungere una migrazione DB
 
-1. Creare `backend/src/db/migrations/00N_description.sql` con il numero progressivo
-2. Wrappare in `BEGIN; ... COMMIT;`
-3. Applicare con il runner: `cd backend && pnpm run migrate`
-   (Il runner traccia le migrazioni eseguite nella tabella `migrations` e salta quelle già applicate.)
-4. Aggiornare ARCHITECTURE_AS_IS.md sezione "1.1 Cosa è stato implementato"
-5. Se la nuova colonna è usata dal frontend, aggiornare i tipi in `frontend/src/types/index.ts`
+1. Creare `backend/src/db/migrations/0NN_description.sql` (prossima: 015), wrappata in `BEGIN; ... COMMIT;`
+2. `cd backend && pnpm run migrate`
+3. Aggiornare questo file (Data Model) e i tipi FE se la colonna arriva al client
 
 ### 3. Modificare la logica di calcolo (budget / FTE / forecast)
 
-1. La logica pura vive in `backend/src/services/computations.ts` o `allocationAggregator.ts`
-2. Scrivere il test unitario prima di modificare (file `*.test.ts` adiacenti)
-3. I servizi accettano una `query` function iniettata — usare `makeStubQuery` nei test
-4. Dopo la modifica, verificare che `dashboard.ts` e `allocations.ts` usino
-   il servizio aggiornato (non ridefinire la logica inline nel router)
-5. Eseguire `pnpm test` prima di considerare il lavoro completo
+1. La logica pura vive in `services/computations.ts`, `allocationAggregator.ts`, `phaseFinancialEngine.ts`
+2. Test unitario prima della modifica (file `*.test.ts` adiacenti, `makeStubQuery` per la DI)
+3. Verificare che `dashboard.ts` e `allocations.ts` usino il servizio (mai logica inline nel router)
+4. `pnpm test` prima di considerare il lavoro completo
 
 ---
 
@@ -370,14 +319,19 @@ Usare mock mode quando il backend non è avviato o per sviluppo UI puro.
 ```
 DATABASE_URL=postgres://postgres:postgres@localhost:5432/project_forecast
 PORT=3000
+PG_POOL_MAX=10                 # serverless: 1-3 + DATABASE_URL sul pooler (porta 6543)
+CORS_ORIGIN=                   # prod: https://<app>.vercel.app (default: http://localhost:5173)
 SUPABASE_URL=https://<project>.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+KEYEDIN_*                      # vedi .env.example (stub Keyedin)
+ANTHROPIC_API_KEY=             # opzionale: feature intelligence KG
+EMBEDDING_API_KEY=             # opzionale: similarità semantica (richiede pgvector)
 ```
 
-### Frontend (`frontend/.env.local`)
+### Frontend (`frontend/.env.local` — untracked)
 ```
 VITE_API_URL=http://localhost:3000
-VITE_USE_MOCK=true          # bypassa chiamate API reali
+VITE_USE_MOCK=true             # bypassa chiamate API reali
 VITE_SUPABASE_URL=https://<project>.supabase.co
 VITE_SUPABASE_ANON_KEY=<anon-key>
 ```
@@ -386,13 +340,16 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
 
 ## Open Issues (roadmap)
 
-Vedere `NEXT_STEPS.md` per lo stato dettagliato. In sintesi:
+Gli step A–I della roadmap originale (`NEXT_STEPS_COMPLETO.md`) sono **completati**,
+incluso H (auth: `requireAuth` + ownership `pm_id`). Restano:
 
-| Step | Descrizione | Stato |
+| Tema | Riferimento | Stato |
 |---|---|---|
-| D | FTE cap enforcement su PUT /allocation | Piccolo, usa `canAllocate` già pronta |
-| E | `phase_id` su `OngoingSnapshot` (migration 009) | Prerequisito di F |
-| F | Phase Financial Engine — forecast per fase | Dopo E |
-| G | `day_rate` cascade su `AllocationEntry` | Indipendente |
-| H | Auth backend: `requireAuth` middleware + filtro `pm_id` | Route `/api/auth` esiste, manca il middleware |
-| J | Re-baselining con versioning | Future feature post-auth |
+| M-001 — Tab Memoria Progetto | `Dashboard.tsx` + `ProjectMemoryTab.tsx` | **Completato** — timeline KG montata come tab in Dashboard |
+| M-002 — Progetti simili semantici | `routes/intelligence.ts` + `SimilarProjects.tsx` + `api/intelligence.ts` | **Completato** — GET `/api/projects/:id/similar-semantic` (kNN cosine su `description_embedding`); attiva asset dormiente mig 013; degrada a `[]` e fallback tag-overlap senza pgvector/embedding |
+| M-003 — Scoping Insight (AI risk brief) | `routes/intelligence.ts` + `ScopingInsightCard.tsx` | **Completato** — GET `/api/projects/:id/scoping-insight`; compone `similarHistory` reale (vicini semantici → fallback tag) e invoca `summarizeScopingRisks`; brief `''` graceful senza `ANTHROPIC_API_KEY` (NoOp) o <3 simili (cold-start); card on-demand con placeholder |
+| M-004 — Retro Questions AI | `routes/intelligence.ts` + `RetrospectiveModal.tsx` | **Completato** — GET `/api/projects/:id/retro-questions`; `RetroContext` da `SlippageEvent` (count/unexpected) + variance/fasi-in-ritardo da `phaseFinancialEngine`; collega `generateRetroQuestions`; `[]` graceful con NoOp o nessun segnale → fallback domande statiche nel modale |
+| M-005 — Capacity Heatmap | `routes/resources.ts` + `CapacityHeatmap.tsx` | **Completato** — GET `/api/resources/capacity-heatmap?weeks=12`; riusa `getRegistryAggregate` (registry condiviso, solo `requireAuth`); banda colore <0.5/0.5–1.0/>1.0, capacità 1.0 FTE; griglia densa montata in `Resources.tsx` |
+| J — Re-baselining con versioning | NEXT_STEPS_COMPLETO.md | Future feature |
+| Backlog post-audit (42 voci prioritizzate) | `report-step6-priority-matrix.md` | In lavorazione (fix step 5, 4, 1 applicati — vedi `fix-log.md`) |
+| Decisioni aperte D1–D4 (sessione/refresh token, ruoli su template/registry, refetch post-save, verifica JWT locale) | `report-decisions.md` | Richiedono input umano |

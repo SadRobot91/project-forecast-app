@@ -12,7 +12,58 @@ router.get('/registry', async (_req, res) => {
     res.json(aggregate);
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /api/resources/capacity-heatmap?weeks=12 — deve stare prima di /:id.
+// Vista densa demand-vs-supply derivata da getRegistryAggregate (registry
+// condiviso cross-project: nessun filtro pm_id, sotto requireAuth soltanto).
+// Capacità per-risorsa fissa a 1.0 FTE/settimana — l'invariante già imposto da
+// canAllocate; banda colore <0.5 sotto / 0.5–1.0 ottimale / >1.0 eccesso. (M-005)
+const capacityBand = (total: number): 'under' | 'optimal' | 'over' => {
+  if (total > 1.0) return 'over';
+  if (total >= 0.5) return 'optimal';
+  return 'under';
+};
+
+const currentMondayISO = (): string => {
+  const d = new Date();
+  const day = d.getUTCDay();                 // 0 Sun … 6 Sat
+  const diff = day === 0 ? -6 : 1 - day;     // back to Monday
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d.toISOString().slice(0, 10);
+};
+
+router.get('/capacity-heatmap', async (req, res) => {
+  try {
+    const weeksParam = parseInt(req.query.weeks as string, 10);
+    const horizon = Number.isFinite(weeksParam) && weeksParam > 0
+      ? Math.min(weeksParam, 52)
+      : 12;
+
+    const aggregate = await getRegistryAggregate();
+
+    // Prefer the next `horizon` weeks from the current week forward; if the data
+    // is entirely in the past (e.g. demo/seed), fall back to the last `horizon`.
+    const monday = currentMondayISO();
+    const future = aggregate.weeks.filter((w) => w >= monday).slice(0, horizon);
+    const weeks = future.length > 0 ? future : aggregate.weeks.slice(-horizon);
+
+    const resources = aggregate.rows.map((r) => ({
+      resource_id: r.resource.id,
+      name: r.resource.name,
+      role: r.resource.role,
+      cells: weeks.map((w) => {
+        const total = r.totals[w] ?? 0;
+        return { week_start: w, total_fte: total, band: capacityBand(total) };
+      }),
+    }));
+
+    res.json({ weeks, resources });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -94,7 +145,7 @@ router.put('/:id', async (req, res) => {
   } catch (err: any) {
     if (err.status === 404) return res.status(404).json({ error: 'Not found' });
     console.error(err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

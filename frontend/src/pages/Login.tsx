@@ -2,6 +2,7 @@ import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { login } from '../api/auth';
 import { useAuth } from '../contexts/AuthContext';
+import Alert from '../components/Alert';
 
 interface FieldErrors {
   email?: string;
@@ -46,7 +47,7 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-base flex items-center justify-center px-4">
       {/* Decorative glow blobs */}
-      <div className="absolute top-0 left-0 w-96 h-96 bg-accent opacity-10 rounded-full blur-3xl spointer-events-none" />
+      <div className="absolute top-0 left-0 w-96 h-96 bg-accent opacity-10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute bottom-0 right-0 w-96 h-96 bg-accent-cyan opacity-10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="relative w-full max-w-md">
@@ -64,13 +65,9 @@ export default function Login() {
         {/* Card */}
         <form
           onSubmit={handleSubmit}
-          className="bg-surface border border-white/8 rounded-2xl p-8 shadow-[0_8px_40px_rgba(108,99,255,0.12)] space-y-5"
+          className="bg-surface border border-white/10 rounded-2xl p-8 shadow-glow-accent space-y-5"
         >
-          {error && (
-            <div className="bg-rag-red/10 border border-rag-red/30 text-rag-red text-sm rounded-lg px-4 py-3">
-              {error}
-            </div>
-          )}
+          {error && <Alert>{error}</Alert>}
 
           <div className="space-y-1.5">
             <label htmlFor="email" className="block text-sm font-medium text-text-muted">
@@ -119,7 +116,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-accent hover:bg-accent/90 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-lg px-4 py-2.5 text-sm transition-all duration-200 shadow-[0_4px_20px_rgba(108,99,255,0.4)] hover:shadow-[0_6px_28px_rgba(108,99,255,0.55)] hover:-translate-y-px"
+            className="w-full bg-accent hover:bg-accent/90 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-lg px-4 py-2.5 text-sm transition-all duration-200 shadow-glow-accent-strong hover:-translate-y-px"
           >
             {loading ? 'Accesso in corso…' : 'Accedi'}
           </button>

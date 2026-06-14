@@ -107,15 +107,15 @@ router.patch('/:phase_id', async (req, res) => {
       return res.status(400).json({ error: 'No fields to update' });
     }
 
-    values.push(phaseId);
+    values.push(phaseId, projectId);
     const result = await query(
-      `UPDATE "ProjectPhase" SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
+      `UPDATE "ProjectPhase" SET ${updates.join(', ')} WHERE id = $${idx} AND project_id = $${idx + 1} RETURNING *`,
       values
     );
     res.json(result.rows[0]);
   } catch (err: any) {
     console.error(err);
-    res.status(500).json({ error: err.message || 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

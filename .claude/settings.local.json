@@ -9,7 +9,17 @@
       "Bash(npm install *)",
       "Bash(./node_modules/.bin/tsc --noEmit)",
       "Bash(export PATH=\"$HOME/.nvm/versions/node/v22.22.2/bin:$PATH\")",
-      "Bash(npx jest *)"
+      "Bash(npx jest *)",
+      "Bash(docker --version)",
+      "Bash(pnpm --version)",
+      "Bash(git check-ignore *)",
+      "Bash(findstr node_modules)",
+      "Skill(run)",
+      "Bash(npm --version)",
+      "Bash(cat .env.local)",
+      "Bash(python -m playwright --version)",
+      "Bash(npx playwright *)",
+      "Bash(pnpm run *)"
     ]
   }
 }

@@ -5,6 +5,7 @@ dotenv.config();
 
 export const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/project_forecast',
+  max: parseInt(process.env.PG_POOL_MAX ?? '10', 10),
 });
 
 export const query = (text: string, params?: any[]) => pool.query(text, params);

@@ -40,7 +40,8 @@ router.post('/login', async (req, res) => {
       },
     });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -48,11 +49,16 @@ router.post('/login', async (req, res) => {
 router.post('/logout', async (req, res) => {
   if (!supabase) return res.status(503).json({ error: 'Auth service not configured' });
   try {
-    const { error } = await supabase.auth.signOut();
-    if (error) return res.status(500).json({ error: error.message });
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (token) {
+      const { error } = await supabase.auth.admin.signOut(token);
+      if (error) console.error('Logout signOut failed:', error.message);
+    }
     res.json({ message: 'Logged out' });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
