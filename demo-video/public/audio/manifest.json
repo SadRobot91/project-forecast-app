@@ -1,0 +1,32 @@
+﻿[
+    {
+        "id":  "00-problem",
+        "text":  "Budget su un foglio Excel. Allocazioni su un altro. Decisioni... da nessuna parte.",
+        "seconds":  6
+    },
+    {
+        "id":  "01-solution",
+        "text":  "Project Forecast: un\u0027unica app per budget, risorse e memoria di progetto.",
+        "seconds":  5
+    },
+    {
+        "id":  "02-dashboard",
+        "text":  "La dashboard mostra budget, previsione a finire e scostamento in tempo reale, fase per fase.",
+        "seconds":  7
+    },
+    {
+        "id":  "03-risorse",
+        "text":  "Il registro risorse aggrega le allocazioni su tutti i progetti: chi Ã¨ sovrallocato si vede subito, in rosso.",
+        "seconds":  8
+    },
+    {
+        "id":  "04-knowledge-graph",
+        "text":  "Decisioni, rischi, slippage e retrospettive restano in una timeline: la memoria storica del progetto.",
+        "seconds":  8
+    },
+    {
+        "id":  "05-outro",
+        "text":  "Project Forecast. Pronta per il prossimo passo.",
+        "seconds":  3
+    }
+]

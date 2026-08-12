@@ -8,6 +8,7 @@ Welcome! This folder contains technical documentation for the Project Forecast A
 
 | Document | Audience | Length | Purpose |
 |----------|----------|--------|---------|
+| **[domain/00_master.md](domain/00_master.md)** | Everyone (business & new devs) | 20 min | **Documentazione di dominio/business**: visione, dizionario, 6 macro-aree, regole trasversali (IT) |
 | **[README.md](../README.md)** | Everyone | 10 min | Project overview, quick start, tech stack |
 | **[AUTH.md](AUTH.md)** | Backend devs, DevOps | 20 min | Authentication flow, Supabase setup, user provisioning |
 | **[KEYEDIN_INTEGRATION.md](KEYEDIN_INTEGRATION.md)** | Backend devs | 25 min | Keyedin API provider pattern, sync workflow, configuration |

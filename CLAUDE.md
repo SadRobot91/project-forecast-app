@@ -115,11 +115,9 @@ project-forecast-app/
 ├── vercel.json                       # /api → backend; /assets e file statici → frontend; fallback SPA → index.html
 ├── nx.json / pnpm-workspace.yaml
 ├── AGENTS.md                         # Design document originale (feature spec)
-├── ARCHITECTURE_AS_IS.md             # Stato storico (vedi anche report audit)
-├── NEXT_STEPS_COMPLETO.md            # Roadmap steps con stato
-├── report-step1..6-*.md              # Audit 2026-06: struttura, visual, componenti, perf, security, priority matrix
-├── report-decisions.md               # Decisioni aperte (D1-D4) con opzioni e trade-off
-├── fix-log.md                        # Changelog dei fix applicati post-audit
+├── ARCHITECTURE_AS_IS.md             # Stato storico
+├── backlog.md                        # SSoT del lavoro in sospeso (verificato 2026-07-22); sostituisce audit/report/fix-log (in git history)
+├── next_steps_new.md                 # Analisi competitor + strategia differenziazione (reference)
 └── CLAUDE.md                         # Questo file
 ```
 
@@ -340,16 +338,12 @@ VITE_SUPABASE_ANON_KEY=<anon-key>
 
 ## Open Issues (roadmap)
 
-Gli step A–I della roadmap originale (`NEXT_STEPS_COMPLETO.md`) sono **completati**,
-incluso H (auth: `requireAuth` + ownership `pm_id`). Restano:
+Gli step A–I della roadmap originale, i 3 bug architetturali, il Knowledge Graph
+(mig 012-013), l'audit post-fix (steps 1-5) e le milestone Estimate Intelligence
+(M-001→M-005) sono **completati e verificati contro il codice il 2026-07-22**.
 
-| Tema | Riferimento | Stato |
-|---|---|---|
-| M-001 — Tab Memoria Progetto | `Dashboard.tsx` + `ProjectMemoryTab.tsx` | **Completato** — timeline KG montata come tab in Dashboard |
-| M-002 — Progetti simili semantici | `routes/intelligence.ts` + `SimilarProjects.tsx` + `api/intelligence.ts` | **Completato** — GET `/api/projects/:id/similar-semantic` (kNN cosine su `description_embedding`); attiva asset dormiente mig 013; degrada a `[]` e fallback tag-overlap senza pgvector/embedding |
-| M-003 — Scoping Insight (AI risk brief) | `routes/intelligence.ts` + `ScopingInsightCard.tsx` | **Completato** — GET `/api/projects/:id/scoping-insight`; compone `similarHistory` reale (vicini semantici → fallback tag) e invoca `summarizeScopingRisks`; brief `''` graceful senza `ANTHROPIC_API_KEY` (NoOp) o <3 simili (cold-start); card on-demand con placeholder |
-| M-004 — Retro Questions AI | `routes/intelligence.ts` + `RetrospectiveModal.tsx` | **Completato** — GET `/api/projects/:id/retro-questions`; `RetroContext` da `SlippageEvent` (count/unexpected) + variance/fasi-in-ritardo da `phaseFinancialEngine`; collega `generateRetroQuestions`; `[]` graceful con NoOp o nessun segnale → fallback domande statiche nel modale |
-| M-005 — Capacity Heatmap | `routes/resources.ts` + `CapacityHeatmap.tsx` | **Completato** — GET `/api/resources/capacity-heatmap?weeks=12`; riusa `getRegistryAggregate` (registry condiviso, solo `requireAuth`); banda colore <0.5/0.5–1.0/>1.0, capacità 1.0 FTE; griglia densa montata in `Resources.tsx` |
-| J — Re-baselining con versioning | NEXT_STEPS_COMPLETO.md | Future feature |
-| Backlog post-audit (42 voci prioritizzate) | `report-step6-priority-matrix.md` | In lavorazione (fix step 5, 4, 1 applicati — vedi `fix-log.md`) |
-| Decisioni aperte D1–D4 (sessione/refresh token, ruoli su template/registry, refetch post-save, verifica JWT locale) | `report-decisions.md` | Richiedono input umano |
+**Tutto il lavoro in sospeso è in [`backlog.md`](./backlog.md)** — SSoT unica: aperti di
+sicurezza (requireRole non wired, no helmet/rate-limit), decisioni prodotto D1/D3/D4/D5
+(refresh token, refetch, JWT locale, design system), igiene repo, minori codice/perf,
+debito di scala (materialized view) e feature future (Scorecard, Scenario/what-if,
+export, GDPR, ecc.). Analisi competitor/strategia in `next_steps_new.md`.
